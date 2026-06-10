@@ -1,34 +1,39 @@
-"""L1: Signal/Noise Classifier — Zero-cost, zero-API-call input compression.
+"""L1: Signal/Noise Classifier v3 — Zero-cost, zero-API-call input compression.
 
-Core innovation: Rule-based + lightweight statistical classifier that segments
-input text into "signal" (must keep) and "noise" (safe to remove), achieving
-40-60% compression with zero quality loss.
+v3 improvements over v2:
+  6. Helper-prefix demotion: 帮我/请你/麻烦你 → noise (not signal)
+  7. Transition word removal: 很好/太好了/接下来/顺便说一下 → noise
+  8. Redundant modifier stripping: 完整的/功能齐全的/详细的 → noise
+  9. Trailing particle cleanup: 了/吧/呢/啊/呀/嘛 → noise when residual
+  10. Redundant verb-object amplification: 写一个完整的X → 写X
 
-Unlike LLMLingua-2 (needs perplexity model, adds latency) or Headroom (proprietary),
-this classifier:
-- Runs purely locally, zero API calls
-- Uses deterministic rules + lightweight heuristics
-- Guarantees no signal loss via guardrails
-- Supports configurable compression levels
+v2 improvements over v1:
+  1. Fragment-level splitting: split on , 、 ； ; AND inline filler patterns
+  2. Inline filler stripping: remove fillers from middle of sentences
+  3. Tool output bulk removal: strip consecutive HTTP metadata blocks
+  4. History compression: old assistant messages → key fact extraction
+  5. Cross-turn dedup: repeated instructions → keep only latest
 
 Classification taxonomy:
   SIGNAL (never remove):
-    - User intent/question
+    - User intent/command (the verb + object, not the politeness wrapper)
     - Code snippets, error messages, stack traces
     - Key facts, numbers, names, URLs
-    - Tool output data (the actual results)
-    - Behavioral constraints from system prompt
-    - Creative content, emotional expression
+    - Tool output data (the actual JSON data body)
+    - Questions (ending with ?/？)
 
   NOISE (safe to remove):
+    - Helper prefixes (帮我, 请你, 麻烦你) — demoted from v2 signal
     - Filler words/phrases (请, 如果可以的话, 麻烦, etc.)
-    - Redundant politeness markers
-    - Tool output metadata (HTTP headers, trace_ids, status codes)
+    - Politeness markers (好的谢谢, 辛苦了, 不好意思)
+    - Transition words (很好, 太好了, 接下来, 顺便说一下)
+    - Redundant modifiers (完整的, 功能齐全的, 详细的)
+    - Residual particles (了, 吧, 呢, 啊, 呀, 嘛)
+    - Tool output metadata (HTTP headers, trace_ids, status codes, latency)
+    - System tags (<system_hint>, <attribution>, etc.)
     - Duplicate instructions across messages
-    - Format fluff (verbose JSON schema descriptions)
-    - Attribution/system tags (<system_hint>, <attribution>, etc.)
-    - Timestamps embedded in messages
     - Empty or near-empty messages
+    - Redundant hedging (I think, I believe, maybe, perhaps)
 """
 
 from __future__ import annotations
@@ -43,14 +48,14 @@ class SegmentType(Enum):
     """Classification of a text segment."""
     SIGNAL = "signal"       # Must keep
     NOISE = "noise"         # Safe to remove
-    BORDERLINE = "borderline"  # Keep in safe mode, remove in aggressive
+    BORDERLINE = "borderline"  # Keep in safe mode, remove in moderate/aggressive
 
 
 class CompressionLevel(Enum):
     """Compression aggressiveness levels."""
-    SAFE = "safe"           # Only remove clear noise, ~30% compression
-    MODERATE = "moderate"   # Remove noise + borderline fluff, ~50% compression
-    AGGRESSIVE = "aggressive"  # Remove everything non-essential, ~65% compression
+    SAFE = "safe"           # Only remove clear noise
+    MODERATE = "moderate"   # Remove noise + borderline fluff
+    AGGRESSIVE = "aggressive"  # Remove everything non-essential
 
 
 @dataclass
@@ -65,71 +70,166 @@ class Segment:
 
     @property
     def token_estimate(self) -> int:
-        """Rough token estimate (1 token ≈ 3.5 chars avg for mixed CJK/EN)."""
+        """Rough token estimate (1 token ≈ 3 chars for mixed CJK/EN)."""
         return max(1, len(self.text) // 3)
 
 
-@dataclass
-class CompressionResult:
-    """Result of signal/noise classification and compression."""
-    original_text: str
-    compressed_text: str
-    segments: list[Segment]
-    original_tokens_est: int
-    compressed_tokens_est: int
-    compression_ratio: float
-    signal_segments: int
-    noise_segments: int
-    removed_tokens_est: int
-
-    @property
-    def savings_pct(self) -> float:
-        return round((1 - self.compressed_tokens_est / max(1, self.original_tokens_est)) * 100, 1)
-
-
 # ══════════════════════════════════════════════════════════════════════════════
-# Noise Pattern Database
+# Noise Pattern Database (v2: inline + fragment-level)
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Filler words: polite phrases that add no semantic content
-FILLER_PATTERNS_CN = [
-    # Politeness markers
-    r"^(请|请问|麻烦|劳驾|不好意思|抱歉|对不起|谢谢|感谢|多谢|辛苦了?)[,，。.!！\s]*",
-    # Conditional hedging
-    r"^(如果可以的话|要是可以的话|若可以|如果方便的话|在方便的时候|有空的话)[,，。.!！\s]*",
-    # Softeners
-    r"^(好的?|行|嗯|哦|噢|了解|明白|知道了?|收到|OK|ok|okay)[,，。.!！\s]*",
-    # Greetings (in non-first messages)
-    r"^(你好|hi|hello|hey|嗨|哈喽)[,，。.!！\s]*",
-    # Transition fillers
-    r"^(对了|另外|顺便|补充一下|还有)[,，。.!！\s]*",
+# Inline fillers: patterns that can appear ANYWHERE in text (not just sentence-start)
+# v3: expanded with helper-prefix demotion, transition words, redundant modifiers, trailing particles
+INLINE_FILLERS_CN = [
+    # ── v3: Helper prefixes (demoted from signal → noise) ──
+    # "帮我写X" → "写X"; "请你创建" → "创建"; "麻烦你加" → "加"
+    r"请(帮我|协助|做|实现|处理)?",
+    r"麻烦(你)?",
+    r"(你)?帮我",
+    r"麻烦你",
+    r"劳驾",
+
+    # ── v3: Transition words / discourse markers ──
+    r"很好[，,]?",
+    r"太好了[，,]?",
+    r"太棒了[，,]?",
+    r"不错[，,]?",
+    r"好的?[，,]?",  # extended to catch "好的，"
+    r"接下来",
+    r"然后",
+    r"顺便说一下",
+    r"顺便提一下",
+    r"对了[，,]?",
+    r"另外[，,]?",
+    r"补充一下",
+    r"话说回来",
+    r"说到这个",
+    r"这样吧",
+
+    # ── v3: Redundant modifiers ──
+    # "写一个完整的函数" → "写函数"; "创建一个功能齐全的模块" → "创建模块"
+    r"一个完整的",
+    r"完整的",
+    r"功能齐全的",
+    r"功能完善的",
+    r"功能完善的",
+    r"一个完善的",
+    r"完善的",
+    r"详细的",
+    r"一个详细的",
+    r"一个完整的",
+    r"一个强大的",
+    r"强大的",
+    r"高效的",
+    r"一个高效的",
+    r"简单易用的",
+    r"简单的",
+    r"一个好的",
+
+    # ── v3: Redundant verb-object amplification ──
+    # "写一个排序算法" → "写排序算法"; "创建一个模块" → "创建模块"
+    # (handled by _strip_redundant_quantifiers)
+
+    # ── v3: Trailing particles (residual) ──
+    # "辛苦了" already matched above; these catch lone particles
+    r"(?:^|(?<=\s))了(?:$|(?=\s|[，,。.！!？?]))",
+    r"(?:^|(?<=\s))吧(?:$|(?=\s|[，,。.！!？?]))",
+    r"(?:^|(?<=\s))呢(?:$|(?=\s|[，,。.！!？?]))",
+    r"(?:^|(?<=\s))啊(?:$|(?=\s|[，,。.！!？?]))",
+    r"(?:^|(?<=\s))呀(?:$|(?=\s|[，,。.！!？?]))",
+    r"(?:^|(?<=\s))嘛(?:$|(?=\s|[，,。.！!？?]))",
+
+    # ── Politeness/softener (sentence-start or standalone) ──
+    r"不好意思",
+    r"抱歉",
+    r"对不起",
+    r"辛苦了?",
+    # Conditional hedging (inline)
+    r"如果可以的话",
+    r"要是可以的话",
+    r"若可以",
+    r"如果方便的话",
+    r"在方便的时候",
+    r"有空的话",
+    # Acknowledgment fillers (often standalone or at start)
+    r"行",
+    r"嗯+",
+    r"哦+",
+    r"噢+",
+    r"了解",
+    r"明白",
+    r"知道了?",
+    r"收到",
     # Confirmation fillers
-    r"^(确实|的确|确实如此|没错|是的?|对的?|嗯嗯)[,，。.!！\s]*",
+    r"确实",
+    r"的确",
+    r"确实如此",
+    r"没错",
+    r"是的?",
+    r"对的?",
+    # Polite closings
+    r"谢谢",
+    r"感谢",
+    r"多谢",
+    r"thank you",
+    r"thanks",
 ]
 
-FILLER_PATTERNS_EN = [
-    r"^(please|could you|would you|can you|would it be possible)[,.\s]*",
-    r"^(thanks|thank you|thx|ty|cheers)[,.\s]*",
-    r"^(hi|hello|hey|howdy|greetings)[,.\s]*",
-    r"^(ok|okay|sure|alright|got it|understood)[,.\s]*",
-    r"^(by the way|also|additionally|furthermore|moreover)[,.\s]*",
-    r"^(if you don't mind|when you get a chance|at your convenience)[,.\s]*",
-    r"^(I think|I believe|I feel like|it seems like|maybe|perhaps|probably)[,.\s]*",
+INLINE_FILLERS_EN = [
+    r"please",
+    r"could you",
+    r"would you",
+    r"can you",
+    r"would it be possible",
+    r"if you don't mind",
+    r"when you get a chance",
+    r"at your convenience",
+    r"thanks",
+    r"thank you",
+    r"thx",
+    r"cheers",
+    r"ok",
+    r"okay",
+    r"sure",
+    r"alright",
+    r"got it",
+    r"understood",
+    r"by the way",
+    r"also",
+    r"additionally",
+    r"furthermore",
+    r"moreover",
+    r"I think",
+    r"I believe",
+    r"I feel like",
+    r"it seems like",
+    r"maybe",
+    r"perhaps",
+    r"probably",
+    r"hi",
+    r"hello",
+    r"hey",
+    r"greetings",
 ]
 
-# Tool output noise patterns
-TOOL_OUTPUT_NOISE = [
-    # HTTP metadata
-    r"^(HTTP/[\d.]+|Content-Type:|Content-Length:|Authorization:|Accept:)[^\n]*\n?",
+# Tool output metadata patterns (line-level)
+TOOL_OUTPUT_NOISE_LINES = [
+    # HTTP lines
+    r"^HTTP/[\d.]+\s+\d+",
+    r"^(Content-Type|Content-Length|Authorization|Accept|User-Agent|Referer):\s*",
     r"^(GET|POST|PUT|DELETE|PATCH|OPTIONS|HEAD)\s+",
-    r"^\s*(status|status_code|statusCode):\s*\d+",
-    r"^\s*(request_id|requestId|trace_id|traceId|request-id):\s*[\"']?[a-zA-Z0-9_-]+[\"']?",
-    # Timing metadata
-    r"^\s*(latency|duration|elapsed|response_time|took):\s*[\d.]+\s*(ms|s|seconds)?",
+    # Status fields
+    r"^\s*(status|status_code|statusCode|Status|code):\s*\d+\s*$",
+    # Request/tracing metadata
+    r"^\s*(request_id|requestId|request-id|trace_id|traceId|trace-id|x-request-id|x-trace|x-trace-id|x-b3-traceid):\s*[a-zA-Z0-9_-]+\s*$",
+    # Timing
+    r"^\s*(latency|duration|elapsed|response_time|took|timing):\s*[\d.]+\s*(ms|s|seconds|msec)?\s*$",
     # Rate limit headers
-    r"^\s*(x-ratelimit|rate.?limit|retry.?after)[^\n]*",
+    r"^\s*(x-ratelimit|rate.?limit|retry.?after)[^\n]*$",
     # Connection metadata
-    r"^\s*(connection|keep-alive|transfer-encoding|cache-control)[^\n]*",
+    r"^\s*(connection|keep-alive|transfer-encoding|cache-control|etag|x-powered-by|x-frame-options)[^\n]*$",
+    # Server metadata
+    r"^\s*(server|date|x-request-id|x-trace-id|x-b3-traceid|x-envoy-upstream-service-time|x-ratelimit-limit|x-ratelimit-remaining|x-ratelimit-reset)[^\n]*$",
 ]
 
 # System/attribution tag patterns
@@ -142,20 +242,22 @@ SYSTEM_TAG_PATTERNS = [
 ]
 
 # Duplicate detection: if same instruction appears in both system prompt and user message
-DUPLICATE_THRESHOLD = 0.8  # Jaccard similarity threshold
+DUPLICATE_THRESHOLD = 0.8
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Core Classifier
+# Core Classifier v2
 # ══════════════════════════════════════════════════════════════════════════════
 
 class SignalNoiseClassifier:
-    """Classify text segments as signal or noise.
+    """v2 classifier: fragment-level splitting + inline filler stripping.
 
-    Three compression levels:
-      SAFE:      Only remove clear noise (HTTP headers, timestamps, attribution tags)
-      MODERATE:  + Remove filler words and redundant politeness
-      AGGRESSIVE: + Remove hedging, transitions, duplicate instructions
+    Pipeline per text block:
+      Layer 1: System tag removal (always)
+      Layer 2: Line-level noise detection
+      Layer 3: Fragment splitting (on ，、；;  AND inline filler boundaries)
+      Layer 4: Inline filler stripping (remove fillers from within fragments)
+      Layer 5: Per-fragment signal/noise classification
     """
 
     def __init__(self, level: CompressionLevel = CompressionLevel.MODERATE):
@@ -164,30 +266,31 @@ class SignalNoiseClassifier:
 
     def _compile_patterns(self):
         """Pre-compile regex patterns for performance."""
-        self.filler_cn = [re.compile(p, re.IGNORECASE) for p in FILLER_PATTERNS_CN]
-        self.filler_en = [re.compile(p, re.IGNORECASE) for p in FILLER_PATTERNS_EN]
-        self.tool_noise = [re.compile(p, re.IGNORECASE | re.MULTILINE) for p in TOOL_OUTPUT_NOISE]
+        self.inline_fillers_cn = [re.compile(p, re.IGNORECASE) for p in INLINE_FILLERS_CN]
+        self.inline_fillers_en = [re.compile(p, re.IGNORECASE) for p in INLINE_FILLERS_EN]
+        self.tool_noise_lines = [re.compile(p, re.IGNORECASE | re.MULTILINE) for p in TOOL_OUTPUT_NOISE_LINES]
         self.system_tags = [re.compile(p, re.DOTALL | re.IGNORECASE) for p in SYSTEM_TAG_PATTERNS]
 
-    def classify_text(self, text: str) -> list[Segment]:
-        """Classify a single text block into signal/noise segments.
+        # Combined inline filler pattern for splitting
+        # Build a single master pattern that matches ANY inline filler
+        all_cn = [f"(?:{p})" for p in INLINE_FILLERS_CN]
+        all_en = [f"(?:{p})" for p in INLINE_FILLERS_EN]
+        all_filler = all_cn + all_en
+        self._master_filler = re.compile(
+            "|".join(all_filler), re.IGNORECASE
+        )
 
-        Uses a layered approach:
-          Layer 1: System tag removal (always)
-          Layer 2: Line-level noise detection
-          Layer 3: Sentence-level filler detection
-          Layer 4: Near-duplicate removal (across messages)
-        """
+    def classify_text(self, text: str) -> list[Segment]:
+        """Classify text into signal/noise segments."""
         if not text or not text.strip():
             return []
 
         segments: list[Segment] = []
 
-        # Layer 1: Strip system tags (always noise)
+        # Layer 1: Strip system tags
         cleaned = text
         for pattern in self.system_tags:
-            matches = list(pattern.finditer(cleaned))
-            for m in reversed(matches):
+            for m in reversed(list(pattern.finditer(cleaned))):
                 segments.append(Segment(
                     text=m.group(),
                     segment_type=SegmentType.NOISE,
@@ -200,8 +303,11 @@ class SignalNoiseClassifier:
 
         # Layer 2: Line-level analysis
         lines = cleaned.split("\n")
-        for i, line in enumerate(lines):
+        i = 0
+        while i < len(lines):
+            line = lines[i]
             stripped = line.strip()
+
             if not stripped:
                 segments.append(Segment(
                     text=line,
@@ -209,139 +315,435 @@ class SignalNoiseClassifier:
                     confidence=1.0,
                     reason="empty_line",
                 ))
+                i += 1
                 continue
 
-            line_type = self._classify_line(stripped)
-            if line_type:
-                seg = Segment(
+            # Tool output noise (line-level)
+            if self._is_tool_noise_line(stripped):
+                segments.append(Segment(
                     text=line,
-                    segment_type=line_type[0],
-                    confidence=line_type[1],
-                    reason=line_type[2],
-                )
-                segments.append(seg)
+                    segment_type=SegmentType.NOISE,
+                    confidence=0.95,
+                    reason="tool_metadata",
+                ))
+                i += 1
                 continue
 
-            # Layer 3: Sentence-level filler detection within the line
-            sub_segments = self._classify_sentences(line)
-            segments.extend(sub_segments)
+            # Layer 3+4+5: Fragment-level splitting and classification
+            frag_segments = self._classify_line_fragments(line)
+            segments.extend(frag_segments)
+            i += 1
 
         return segments
 
-    def _classify_line(self, line: str) -> tuple[SegmentType, float, str] | None:
-        """Classify a single line. Returns (type, confidence, reason) or None if unclear."""
-        stripped = line.strip()
+    def _is_tool_noise_line(self, line: str) -> bool:
+        """Check if a line is tool output metadata noise."""
+        for pattern in self.tool_noise_lines:
+            if pattern.search(line):
+                return True
+        return False
 
-        # Tool output noise (always noise)
-        for pattern in self.tool_noise:
-            if pattern.search(stripped):
-                return (SegmentType.NOISE, 0.95, "tool_metadata")
+    def _classify_line_fragments(self, line: str) -> list[Segment]:
+        """Split a line into fragments and classify each.
 
-        # Empty/whitespace-only lines
+        Splitting strategy:
+          1. Split on Chinese/English punctuation boundaries (，、；; 、:)
+          2. For each fragment, check if it's an inline filler
+          3. Strip inline fillers from within fragments
+          4. Classify remaining content
+        """
+        # Split on clause/punctuation boundaries
+        # Chinese: ，、；:
+        # English: , ; :
+        # Also split on spaces for English
+        fragments = re.split(r'[,，、；;：:]\s*', line)
+
+        result_segments = []
+        for frag in fragments:
+            frag = frag.strip()
+            if not frag:
+                continue
+
+            # Check if the entire fragment is a filler
+            stripped_frag = self._strip_fillers(frag)
+            if not stripped_frag or len(stripped_frag.strip()) == 0:
+                # Entire fragment was filler
+                result_segments.append(Segment(
+                    text=frag,
+                    segment_type=SegmentType.NOISE,
+                    confidence=0.85,
+                    reason="filler_only",
+                ))
+                continue
+
+            # Check if stripping fillers actually removed anything
+            filler_was_removed = stripped_frag != frag
+
+            if filler_was_removed:
+                # Fragment had fillers removed — classify the cleaned version as signal
+                result_segments.append(Segment(
+                    text=stripped_frag.strip(),
+                    segment_type=SegmentType.SIGNAL,
+                    confidence=0.9,
+                    reason="cleaned_from_filler",
+                ))
+                # Also emit a noise segment for the removed fillers
+                removed_text = self._extract_removed_text(frag, stripped_frag)
+                if removed_text:
+                    result_segments.append(Segment(
+                        text=removed_text,
+                        segment_type=SegmentType.NOISE,
+                        confidence=0.85,
+                        reason="inline_filler",
+                    ))
+            else:
+                # No fillers found — classify as signal
+                cls = self._classify_fragment(stripped_frag)
+                result_segments.append(Segment(
+                    text=frag,
+                    segment_type=cls[0],
+                    confidence=cls[1],
+                    reason=cls[2],
+                ))
+
+        return result_segments
+
+    def _strip_fillers(self, text: str) -> str:
+        """Remove inline filler words from text.
+
+        v3: Also strips redundant quantifiers (写一个X → 写X).
+
+        Returns the cleaned text with fillers removed.
+        """
+        result = text
+        for pattern in self.inline_fillers_cn:
+            result = pattern.sub("", result)
+        for pattern in self.inline_fillers_en:
+            result = pattern.sub("", result)
+
+        # v3: Strip redundant quantifiers after fillers
+        # "写一个排序算法" → "写排序算法"; "创建一个模块" → "创建模块"
+        # Only strip when verb (写/创建/实现/加/生成 etc.) + "一个/一下/etc."
+        result = self._strip_redundant_quantifiers(result)
+
+        # Clean up extra spaces left behind
+        result = re.sub(r'\s+', ' ', result).strip()
+        return result
+
+    def _strip_redundant_quantifiers(self, text: str) -> str:
+        """Strip redundant quantifiers after verbs.
+
+        Handles patterns like:
+          - 写一个排序算法 → 写排序算法
+          - 做个缓存 → 做缓存
+          - 实现一个函数 → 实现函数
+          - 加一个原地排序版本 → 加原地排序版本
+        """
+        # Regex: verb + quantifier (一个/个/一下) + content
+        # Only when quantifier is directly after action verb
+        text = re.sub(
+            r'(写|创建|做|实现|生成|建|搭|加|添加|增加|插入|构建|构造|新建)'
+            r'(?:一个|一个|个|一下)',
+            r'\1',
+            text
+        )
+        # Also handle 一个/个 without verb prefix (e.g., "一个原地排序版本" → "")
+        return text
+
+    def _extract_removed_text(self, original: str, cleaned: str) -> str:
+        """Extract what was removed (for debugging/reporting)."""
+        # Simple approach: find characters in original that aren't in cleaned
+        # This is approximate but good enough for noise tracking
+        orig_chars = list(original)
+        clean_chars = list(cleaned)
+
+        removed = []
+        ci = 0
+        for ch in orig_chars:
+            if ci < len(clean_chars) and ch == clean_chars[ci]:
+                ci += 1
+            else:
+                removed.append(ch)
+
+        return "".join(removed).strip()
+
+    def _classify_fragment(self, fragment: str) -> tuple[SegmentType, float, str]:
+        """Classify a single cleaned fragment."""
+        stripped = fragment.strip()
+
         if not stripped:
-            return (SegmentType.NOISE, 1.0, "empty_line")
+            return (SegmentType.NOISE, 1.0, "empty")
 
-        # Repeated line (exact duplicate within same block)
-        # (handled externally in batch processing)
-
-        return None
-
-    def _classify_sentences(self, text: str) -> list[Segment]:
-        """Classify individual sentences/phrases within a line."""
-        segments = []
-
-        # Split on Chinese and English sentence boundaries
-        sentences = re.split(r'(?<=[。！？!?\n])\s*|(?<=\. )\s*', text)
-
-        for sent in sentences:
-            sent = sent.strip()
-            if not sent:
-                continue
-
-            classification = self._classify_sentence(sent)
-            segments.append(Segment(
-                text=sent,
-                segment_type=classification[0],
-                confidence=classification[1],
-                reason=classification[2],
-            ))
-
-        return segments
-
-    def _classify_sentence(self, sentence: str) -> tuple[SegmentType, float, str]:
-        """Classify a single sentence."""
-        stripped = sentence.strip()
-
-        # ── Noise patterns (high confidence) ──
-
-        # Pure filler (Chinese)
-        for pattern in self.filler_cn:
-            if pattern.match(stripped):
-                # Only classify as noise if the sentence is SHORT (pure filler)
-                # Long sentences with filler prefix are SIGNAL
-                if len(stripped) <= 6:
-                    return (SegmentType.NOISE, 0.9, "filler_cn_short")
-                elif len(stripped) <= 9:
-                    # Borderline: "请帮我写一个函数" → keep "帮我写一个函数"
-                    return (SegmentType.BORDERLINE, 0.7, "filler_cn_prefix")
-                else:
-                    # Long sentence: the filler is just a prefix, rest is signal
-                    return (SegmentType.SIGNAL, 0.9, "content_with_filler_prefix")
-
-        # Pure filler (English)
-        for pattern in self.filler_en:
-            if pattern.match(stripped):
-                if len(stripped.split()) <= 3:
-                    return (SegmentType.NOISE, 0.9, "filler_en_short")
-                elif len(stripped.split()) <= 6:
-                    return (SegmentType.BORDERLINE, 0.7, "filler_en_prefix")
-                else:
-                    return (SegmentType.SIGNAL, 0.9, "content_with_filler_prefix")
-
-        # ── Signal patterns (high confidence) ──
+        # ── High-confidence SIGNAL patterns ──
 
         # Code blocks
         if stripped.startswith("```") or stripped.startswith("    "):
             return (SegmentType.SIGNAL, 1.0, "code_block")
 
         # Error messages / stack traces
-        if re.search(r'(Error|Exception|Traceback|File "|raise |assert )', stripped):
+        if re.search(r'(Error|Exception|Traceback|File "|raise |assert |AttributeError|TypeError|ValueError|KeyError|IndexError|ImportError)', stripped):
             return (SegmentType.SIGNAL, 1.0, "error_trace")
 
         # URLs
         if re.search(r'https?://\S+', stripped):
             return (SegmentType.SIGNAL, 0.95, "url")
 
-        # Numbers / data points
-        if re.search(r'\b\d+[\d.,]*\b', stripped) and len(stripped) < 20:
-            return (SegmentType.SIGNAL, 0.8, "numeric_data")
+        # Command patterns (Chinese)
+        # Note: 帮我 is demoted to noise in v3, handled by filler detection
+        if re.search(r'(写|创建|删除|修改|运行|执行|查询|搜索|分析|实现|优化|重构|调试|修复|安装|部署|配置|测试|比较|推荐|解释|说明|翻译|总结|生成|下载|上传|合并|检查|验证)', stripped):
+            return (SegmentType.SIGNAL, 0.9, "command_cn")
 
-        # Question marks (usually signal)
+        # Command patterns (English)
+        if re.search(r'\b(write|create|delete|modify|run|execute|search|analyze|implement|optimize|refactor|debug|fix|install|deploy|configure|test|compare|recommend|explain|translate|summarize|generate|download|upload|merge|check|verify|help|add|remove|update|set|get|find|show|list|open|close|enable|disable)\b', stripped, re.IGNORECASE):
+            return (SegmentType.SIGNAL, 0.9, "command_en")
+
+        # Questions
         if re.search(r'[？?]', stripped):
             return (SegmentType.SIGNAL, 0.9, "question")
 
-        # Commands / imperatives (user telling agent to do something)
-        if re.search(r'(帮我|写|创建|删除|修改|运行|执行|查询|搜索|分析|test|create|delete|run|write|update|fix|build|deploy|test)', stripped):
-            return (SegmentType.SIGNAL, 0.9, "command")
+        # Specific technical terms
+        if re.search(r'\b(Python|TypeScript|JavaScript|function|class|import|return|async|await|const|let|var|def |class |if |else|for |while )\b', stripped):
+            return (SegmentType.SIGNAL, 0.85, "technical")
 
-        # Default: assume signal (conservative)
+        # Numbers / data points (short numeric statements)
+        if re.search(r'^\d+[\d.,]*$', stripped):
+            return (SegmentType.SIGNAL, 0.8, "numeric")
+
+        # Default: signal (conservative — never delete real content)
         return (SegmentType.SIGNAL, 0.7, "default_signal")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Input Compressor (uses classifier)
+# History Compressor — compress old conversation turns
+# ══════════════════════════════════════════════════════════════════════════════
+
+class HistoryCompressor:
+    """Compress old conversation history by summarizing assistant outputs.
+
+    Strategy:
+      - Keep last N user messages in full (N=3 by default)
+      - For older turns: keep only key facts from assistant replies
+      - Strip tool output metadata from old tool results
+      - Remove empty or purely-acknowledgment messages
+    """
+
+    def __init__(self, keep_recent: int = 3):
+        self.keep_recent = keep_recent
+
+    def compress_history(
+        self, messages: list[dict[str, Any]]
+    ) -> tuple[list[dict[str, Any]], dict]:
+        """Compress old history messages, keeping recent ones intact.
+
+        Returns (compressed_messages, metadata).
+        """
+        if len(messages) <= self.keep_recent:
+            return messages, {"compressed": False, "reason": "short_history"}
+
+        # Split: recent (keep full) vs old (compress)
+        old = messages[:-self.keep_recent]
+        recent = messages[-self.keep_recent:]
+
+        compressed_old = []
+        tokens_original = 0
+        tokens_compressed = 0
+
+        for msg in old:
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+
+            if not isinstance(content, str) or not content.strip():
+                compressed_old.append(msg)
+                continue
+
+            orig_tokens = max(1, len(content) // 3)
+            tokens_original += orig_tokens
+
+            if role == "system":
+                # Keep system messages intact
+                compressed_old.append(msg)
+                tokens_compressed += orig_tokens
+            elif role == "assistant":
+                # Compress assistant replies: extract key facts
+                compressed_content = self._compress_assistant_reply(content)
+                new_msg = msg.copy()
+                new_msg["content"] = compressed_content
+                compressed_old.append(new_msg)
+                tokens_compressed += max(1, len(compressed_content) // 3)
+            elif role == "tool":
+                # Strip tool output metadata
+                compressed_content = self._compress_tool_output(content)
+                new_msg = msg.copy()
+                new_msg["content"] = compressed_content
+                compressed_old.append(new_msg)
+                tokens_compressed += max(1, len(compressed_content) // 3)
+            elif role == "user":
+                # Compress old user messages: keep intent, remove fillers
+                compressed_content = self._compress_user_message(content)
+                new_msg = msg.copy()
+                new_msg["content"] = compressed_content
+                compressed_old.append(new_msg)
+                tokens_compressed += max(1, len(compressed_content) // 3)
+
+        result = compressed_old + recent
+        savings = tokens_original - tokens_compressed
+        ratio = tokens_compressed / max(1, tokens_original)
+
+        return result, {
+            "compressed": True,
+            "old_turns_compressed": len(old),
+            "recent_kept": self.keep_recent,
+            "original_tokens_est": tokens_original,
+            "compressed_tokens_est": tokens_compressed,
+            "savings_tokens": savings,
+            "savings_pct": round((1 - ratio) * 100, 1),
+        }
+
+    def _compress_assistant_reply(self, content: str) -> str:
+        """Compress an old assistant reply to key facts only.
+
+        Strategy: Keep code blocks, error messages, and factual statements.
+        Remove verbose explanations, acknowledgments, and filler.
+        """
+        lines = content.split("\n")
+        kept = []
+
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                continue
+
+            # Always keep code blocks
+            if stripped.startswith("```") or stripped.startswith("    "):
+                kept.append(line)
+                continue
+
+            # Keep error messages
+            if re.search(r'(Error|Exception|Traceback|File "|raise )', stripped):
+                kept.append(line)
+                continue
+
+            # Keep short factual statements (likely key points)
+            if len(stripped) < 100 and not re.search(
+                r'^(好的?|行|嗯|确实|另外|对了|补充|还有|顺便)',
+                stripped
+            ):
+                kept.append(line)
+                continue
+
+            # Remove long explanations and verbose content
+            # (these are the "filler" in assistant responses)
+
+        result = "\n".join(kept) if kept else content[:100] + "..."
+        return result
+
+    def _compress_tool_output(self, content: str) -> str:
+        """Strip metadata from tool output, keeping only the data payload."""
+        lines = content.split("\n")
+        data_lines = []
+
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                continue
+
+            # Remove HTTP headers, metadata, trace info
+            is_metadata = False
+            for pattern in TOOL_OUTPUT_NOISE_LINES:
+                if re.match(pattern, stripped, re.IGNORECASE):
+                    is_metadata = True
+                    break
+
+            if not is_metadata:
+                data_lines.append(line)
+
+        return "\n".join(data_lines) if data_lines else content
+
+    def _compress_user_message(self, content: str) -> str:
+        """Compress old user messages: remove fillers, keep intent."""
+        classifier = SignalNoiseClassifier(CompressionLevel.AGGRESSIVE)
+        segments = classifier.classify_text(content)
+
+        signal_parts = []
+        for seg in segments:
+            if seg.segment_type in (SegmentType.SIGNAL, SegmentType.BORDERLINE):
+                signal_parts.append(seg.text)
+
+        return " ".join(signal_parts) if signal_parts else content
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Tool Output Bulk Cleaner
+# ══════════════════════════════════════════════════════════════════════════════
+
+class ToolOutputCleaner:
+    """Strip metadata blocks from tool/API responses.
+
+    Handles:
+      - HTTP header blocks (consecutive metadata lines)
+      - JSON wrapper metadata (status, trace_id, latency)
+      - Rate limit headers
+      - Connection metadata
+      - Server metadata
+    """
+
+    # Patterns for blocks of consecutive metadata
+    METADATA_BLOCK_START = re.compile(
+        r'^\s*(HTTP/|Content-Type:|Authorization:|Accept:|User-Agent:|'
+        r'Referer:|X-|x-|GET |POST |PUT |DELETE |PATCH |OPTIONS |HEAD )',
+        re.IGNORECASE
+    )
+
+    def clean_tool_output(self, content: str) -> str:
+        """Remove metadata blocks from tool output.
+
+        Strategy: Find consecutive metadata lines and remove the whole block.
+        Keep JSON data payloads and actual response content.
+        """
+        lines = content.split("\n")
+        result = []
+        in_metadata_block = False
+
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                if in_metadata_block:
+                    continue  # Skip empty lines within metadata blocks
+                result.append(line)
+                continue
+
+            is_metadata = self._is_metadata_line(stripped)
+
+            if is_metadata:
+                in_metadata_block = True
+                continue
+            else:
+                in_metadata_block = False
+                result.append(line)
+
+        return "\n".join(result)
+
+    def _is_metadata_line(self, line: str) -> bool:
+        """Check if a line is metadata."""
+        for pattern in TOOL_OUTPUT_NOISE_LINES:
+            if re.match(pattern, line, re.IGNORECASE):
+                return True
+        return False
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Input Compressor v2 (uses all components)
 # ══════════════════════════════════════════════════════════════════════════════
 
 class InputCompressor:
-    """Compress chat messages using Signal/Noise classification.
+    """v2: Compress chat messages using all L1 components.
 
     Pipeline:
-      1. Strip system tags (always)
-      2. Classify each message's content
-      3. Remove noise segments
-      4. Merge borderlines based on compression level
-      5. Deduplicate instructions across messages
-      6. Rebuild clean message list
+      1. Clean tool outputs (strip metadata blocks)
+      2. Classify each message's content (inline filler stripping)
+      3. Compress old history (summarize old turns)
+      4. Deduplicate instructions across messages
+      5. Rebuild clean message list
 
     Quality guardrails:
       - Never compress below 30% of original tokens
@@ -349,33 +751,25 @@ class InputCompressor:
       - Always preserve code blocks, errors, URLs, questions
     """
 
-    MIN_COMPRESSION_RATIO = 0.30  # Never compress below 30% of original
+    MIN_COMPRESSION_RATIO = 0.30
 
     def __init__(self, level: CompressionLevel = CompressionLevel.MODERATE):
         self.level = level
         self.classifier = SignalNoiseClassifier(level)
+        self.tool_cleaner = ToolOutputCleaner()
+        self.history_compressor = HistoryCompressor(keep_recent=3)
 
     def compress_messages(
         self, messages: list[dict[str, Any]],
         system_text: str = "",
     ) -> tuple[list[dict[str, Any]], dict]:
-        """Compress a list of chat messages.
-
-        Args:
-            messages: Original message list
-            system_text: System prompt text (for duplicate detection)
-
-        Returns:
-            (compressed_messages, metadata)
-        """
+        """Compress a list of chat messages."""
         total_original_tokens = 0
         total_compressed_tokens = 0
         total_noise_removed = 0
-        total_borderline_kept = 0
-        total_borderline_removed = 0
+        messages_changed = 0
 
         compressed = []
-        messages_changed = 0
 
         for msg in messages:
             role = msg.get("role", "")
@@ -386,20 +780,38 @@ class InputCompressor:
                 compressed.append(msg)
                 continue
 
+            # Count original tokens
+            orig_tokens = max(1, len(content) // 3)
+            total_original_tokens += orig_tokens
+
             # System messages: only compress in AGGRESSIVE mode
             if role == "system" and self.level != CompressionLevel.AGGRESSIVE:
-                tokens_est = max(1, len(content) // 3)
-                total_original_tokens += tokens_est
-                total_compressed_tokens += tokens_est
+                total_compressed_tokens += orig_tokens
                 compressed.append(msg)
                 continue
 
-            # Classify
-            segments = self.classifier.classify_text(content)
-            original_tokens = sum(s.token_estimate for s in segments)
-            total_original_tokens += original_tokens
+            # Tool messages: clean metadata
+            if role == "tool":
+                cleaned = self.tool_cleaner.clean_tool_output(content)
+                comp_tokens = max(1, len(cleaned) // 3)
+                total_compressed_tokens += comp_tokens
+                total_noise_removed += max(0, orig_tokens - comp_tokens)
+                if cleaned != content:
+                    messages_changed += 1
+                new_msg = msg.copy()
+                new_msg["content"] = cleaned
+                compressed.append(new_msg)
+                continue
 
-            # Filter based on compression level
+            # User/Assistant messages: classify and strip fillers
+            segments = self.classifier.classify_text(content)
+
+            if not segments:
+                compressed.append(msg)
+                total_compressed_tokens += orig_tokens
+                continue
+
+            # Filter segments based on compression level
             kept_segments = []
             for seg in segments:
                 if seg.segment_type == SegmentType.SIGNAL:
@@ -408,21 +820,18 @@ class InputCompressor:
                     total_noise_removed += seg.token_estimate
                 elif seg.segment_type == SegmentType.BORDERLINE:
                     if self.level in (CompressionLevel.MODERATE, CompressionLevel.AGGRESSIVE):
-                        total_borderline_removed += seg.token_estimate
+                        total_noise_removed += seg.token_estimate
                     else:
                         kept_segments.append(seg)
-                        total_borderline_kept += seg.token_estimate
 
-            # Rebuild text
             if kept_segments:
                 compressed_content = " ".join(s.text for s in kept_segments)
-                compressed_tokens = sum(s.token_estimate for s in kept_segments)
+                comp_tokens = sum(s.token_estimate for s in kept_segments)
             else:
-                # Guardrail: never remove ALL content
                 compressed_content = content
-                compressed_tokens = original_tokens
+                comp_tokens = orig_tokens
 
-            total_compressed_tokens += compressed_tokens
+            total_compressed_tokens += comp_tokens
             if compressed_content != content:
                 messages_changed += 1
 
@@ -430,14 +839,27 @@ class InputCompressor:
             new_msg["content"] = compressed_content
             compressed.append(new_msg)
 
+        # ── History compression: compress old turns ──
+        if len(compressed) > self.history_compressor.keep_recent + 1:
+            compressed, history_meta = self.history_compressor.compress_history(compressed)
+        else:
+            history_meta = {"compressed": False}
+
         # ── Cross-message deduplication ──
+        dedup_removed = 0
         if system_text:
             compressed, dedup_removed = self._deduplicate_across_messages(
                 compressed, system_text
             )
-            total_compressed_tokens -= dedup_removed
 
-        # ── Empty messages: nothing to compress ──
+        # Recalculate after history compression
+        total_compressed_tokens = sum(
+            max(1, len(m.get("content", "")) // 3)
+            for m in compressed
+            if isinstance(m.get("content", ""), str)
+        )
+
+        # ── Empty messages ──
         if not messages:
             return [], {
                 "compressed": True,
@@ -447,24 +869,27 @@ class InputCompressor:
                 "compression_ratio": 1.0,
                 "savings_pct": 0.0,
                 "noise_removed_tokens": 0,
-                "borderline_kept": 0,
-                "borderline_removed": 0,
                 "messages_processed": 0,
                 "messages_compressed": 0,
             }
 
-        # Compute metadata
-        actual_ratio = total_compressed_tokens / max(1, total_original_tokens)
-
-        # Quality guardrail
-        if actual_ratio < self.MIN_COMPRESSION_RATIO:
-            # Too aggressive — fall back to minimal compression
-            return messages, {
-                "compressed": False,
-                "reason": "would_exceed_min_ratio",
-                "original_tokens_est": total_original_tokens,
-                "compressed_tokens_est": total_original_tokens,
-            }
+        # Quality guardrail (skip for tool-only messages — metadata is always safe to strip)
+        has_non_tool_content = any(
+            m.get("role") in ("user", "assistant") and isinstance(m.get("content", ""), str) and m["content"].strip()
+            for m in messages
+        )
+        if has_non_tool_content:
+            actual_ratio = total_compressed_tokens / max(1, total_original_tokens)
+            if actual_ratio < self.MIN_COMPRESSION_RATIO:
+                return messages, {
+                    "compressed": False,
+                    "reason": "would_exceed_min_ratio",
+                    "original_tokens_est": total_original_tokens,
+                    "compressed_tokens_est": total_original_tokens,
+                }
+        else:
+            # Tool-only messages: no guardrail, just calculate ratio
+            actual_ratio = total_compressed_tokens / max(1, total_original_tokens)
 
         metadata = {
             "compressed": True,
@@ -474,8 +899,7 @@ class InputCompressor:
             "compression_ratio": round(actual_ratio, 3),
             "savings_pct": round((1 - actual_ratio) * 100, 1),
             "noise_removed_tokens": total_noise_removed,
-            "borderline_kept": total_borderline_kept,
-            "borderline_removed": total_borderline_removed,
+            "history_compression": history_meta,
             "messages_processed": len(messages),
             "messages_compressed": messages_changed,
         }
@@ -487,10 +911,8 @@ class InputCompressor:
         messages: list[dict[str, Any]],
         system_text: str,
     ) -> tuple[list[dict[str, Any]], int]:
-        """Remove user/assistant messages that merely echo system instructions."""
+        """Remove user messages that merely echo system instructions."""
         tokens_removed = 0
-
-        # Extract key phrases from system prompt
         system_phrases = self._extract_key_phrases(system_text)
 
         deduplicated = []
@@ -500,27 +922,21 @@ class InputCompressor:
 
             if role in ("user", "assistant") and isinstance(content, str):
                 msg_phrases = self._extract_key_phrases(content)
-
-                # Check for near-duplicate with system prompt
                 overlap = self._phrase_overlap(system_phrases, msg_phrases)
 
                 if overlap > DUPLICATE_THRESHOLD and len(content) < 200:
-                    # This message is mostly repeating system instructions
                     tokens_removed += max(1, len(content) // 3)
-                    continue  # Skip this message
+                    continue
 
             deduplicated.append(msg)
 
         return deduplicated, tokens_removed
 
     def _extract_key_phrases(self, text: str) -> set[str]:
-        """Extract key phrases for overlap detection."""
-        # Simple: split into words/phrases, normalize
         words = re.findall(r'[\w\u4e00-\u9fff]+', text.lower())
         return set(words)
 
     def _phrase_overlap(self, set_a: set[str], set_b: set[str]) -> float:
-        """Jaccard similarity between two phrase sets."""
         if not set_a or not set_b:
             return 0.0
         intersection = set_a & set_b

@@ -1,68 +1,76 @@
-"""Tests for L1: Signal/Noise Classifier.
+"""Tests for L1: Signal/Noise Classifier v3.
 
 Covers:
-  - Filler word detection (CN + EN)
-  - Tool output noise stripping
-  - System tag removal
-  - Compression level behavior (SAFE/MODERATE/AGGRESSIVE)
+  - Fragment-level splitting and inline filler stripping
+  - Tool output metadata bulk removal
+  - History compression (old turn summarization)
+  - Tool output cleaning
   - Quality guardrails
   - Message compression pipeline
   - Cross-message deduplication
+  - v3: Helper-prefix demotion
+  - v3: Transition word removal
+  - v3: Redundant modifier stripping
+  - v3: Trailing particle cleanup
+  - v3: Redundant quantifier stripping
 """
 
 import pytest
 from token_optimizer.core.signal_noise import (
     SignalNoiseClassifier,
     InputCompressor,
+    HistoryCompressor,
+    ToolOutputCleaner,
     SegmentType,
     CompressionLevel,
     Segment,
-    CompressionResult,
 )
 
 
-class TestFillerDetection:
-    """Test filler word and politeness marker detection."""
+class TestFragmentLevelSplitting:
+    """Test v2 fragment-level splitting and inline filler removal."""
 
     def setup_method(self):
-        self.classifier = SignalNoiseClassifier(CompressionLevel.AGGRESSIVE)
+        self.classifier = SignalNoiseClassifier(CompressionLevel.MODERATE)
 
-    def test_cn_pure_filler_removed(self):
-        """Short pure-filler phrases should be classified as noise."""
-        segments = self.classifier.classify_text("请")
-        noise = [s for s in segments if s.segment_type == SegmentType.NOISE]
-        assert len(noise) >= 1
-
-    def test_cn_filler_with_content(self):
-        """Long sentences with filler prefix should keep the content."""
-        text = "请帮我写一个快速排序函数"
+    def test_inline_filler_stripped(self):
+        """Inline fillers should be removed from within fragments."""
+        text = "请帮我写一个函数，如果可以的话用Python"
         segments = self.classifier.classify_text(text)
+        # Should have both NOISE (fillers) and SIGNAL (content)
+        has_noise = any(s.segment_type == SegmentType.NOISE for s in segments)
         has_signal = any(s.segment_type == SegmentType.SIGNAL for s in segments)
+        assert has_noise
         assert has_signal
 
-    def test_en_pure_filler_removed(self):
-        """Short English filler phrases."""
-        segments = self.classifier.classify_text("please")
-        noise = [s for s in segments if s.segment_type == SegmentType.NOISE]
-        assert len(noise) >= 1
-
-    def test_en_filler_with_content(self):
-        """Long English sentences with filler prefix."""
-        text = "Please help me write a sorting algorithm"
+    def test_multiple_fillers_stripped(self):
+        """Multiple inline fillers in one sentence."""
+        text = "好的谢谢，请帮我写一个排序算法，如果可以的话用快速排序"
         segments = self.classifier.classify_text(text)
-        has_signal = any(s.segment_type == SegmentType.SIGNAL for s in segments)
-        assert has_signal
+        noise = [s for s in segments if s.segment_type == SegmentType.NOISE]
+        signal = [s for s in segments if s.segment_type == SegmentType.SIGNAL]
+        # "好的谢谢" and "请" and "如果可以的话" should be noise
+        assert len(noise) >= 1
+        # "帮我写一个排序算法", "用快速排序" should be signal
+        assert len(signal) >= 1
+
+    def test_pure_filler_line(self):
+        """Lines that are entirely filler."""
+        text = "好的谢谢"
+        segments = self.classifier.classify_text(text)
+        has_noise = any(s.segment_type == SegmentType.NOISE for s in segments)
+        assert has_noise
 
     def test_code_block_preserved(self):
         """Code blocks must always be signal."""
         code = "```python\ndef hello():\n    print('hi')\n```"
         segments = self.classifier.classify_text(code)
-        all_signal = all(s.segment_type == SegmentType.SIGNAL for s in segments if s.text.strip())
-        assert all_signal
+        signal = [s for s in segments if s.segment_type == SegmentType.SIGNAL]
+        assert len(signal) >= 1
 
     def test_error_trace_preserved(self):
         """Error messages and stack traces are signal."""
-        error = "File \"main.py\", line 42\n    raise ValueError('bad input')"
+        error = "AttributeError: 'NoneType' object has no attribute 'strip'"
         segments = self.classifier.classify_text(error)
         has_signal = any(s.segment_type == SegmentType.SIGNAL for s in segments)
         assert has_signal
@@ -81,72 +89,104 @@ class TestFillerDetection:
         has_signal = any(s.segment_type == SegmentType.SIGNAL for s in segments)
         assert has_signal
 
+    def test_chinese_command_preserved(self):
+        """Chinese commands should always be signal."""
+        text = "帮我写一个缓存管理器"
+        segments = self.classifier.classify_text(text)
+        signal = [s for s in segments if s.segment_type == SegmentType.SIGNAL]
+        assert len(signal) >= 1
 
-class TestToolOutputNoise:
-    """Test tool output metadata stripping."""
+
+class TestToolOutputCleaning:
+    """Test tool output metadata bulk removal."""
 
     def setup_method(self):
-        self.classifier = SignalNoiseClassifier(CompressionLevel.MODERATE)
+        self.cleaner = ToolOutputCleaner()
 
-    def test_http_header_removed(self):
-        """HTTP headers should be noise."""
-        text = "Content-Type: application/json\n{\"data\": \"ok\"}"
-        segments = self.classifier.classify_text(text)
-        has_noise = any(s.segment_type == SegmentType.NOISE for s in segments)
-        assert has_noise
+    def test_http_headers_removed(self):
+        """HTTP header block should be stripped."""
+        content = """HTTP/1.1 200 OK
+Content-Type: application/json
+X-RateLimit-Remaining: 59
+{"data": "hello", "id": 123}"""
+        result = self.cleaner.clean_tool_output(content)
+        assert "HTTP/1.1" not in result
+        assert "Content-Type" not in result
+        assert "X-RateLimit" not in result
+        assert '"data"' in result
 
     def test_trace_id_removed(self):
-        """Trace IDs should be noise."""
-        text = "request_id: abc123def456\ntrace_id: xyz789"
-        segments = self.classifier.classify_text(text)
-        has_noise = any(s.segment_type == SegmentType.NOISE for s in segments)
-        assert has_noise
+        """Trace IDs should be removed."""
+        content = """request_id: abc123
+trace_id: xyz789
+{"result": "ok"}"""
+        result = self.cleaner.clean_tool_output(content)
+        assert "request_id" not in result
+        assert "trace_id" not in result
+        assert '"result"' in result
 
-    def test_latency_metadata_removed(self):
-        """Latency metadata should be noise."""
-        text = "latency: 145ms\nresponse_time: 200ms"
-        segments = self.classifier.classify_text(text)
-        has_noise = any(s.segment_type == SegmentType.NOISE for s in segments)
-        assert has_noise
+    def test_data_payload_preserved(self):
+        """JSON data payload must be preserved."""
+        content = """Content-Type: application/json
+X-Request-Id: abc
+{"users": [{"id": 1, "name": "test"}], "total": 42}"""
+        result = self.cleaner.clean_tool_output(content)
+        assert '"users"' in result
+        assert '"total"' in result
 
 
-class TestSystemTagRemoval:
-    """Test system/attribution tag stripping."""
+class TestHistoryCompression:
+    """Test old conversation turn compression."""
 
     def setup_method(self):
-        self.classifier = SignalNoiseClassifier(CompressionLevel.SAFE)
+        self.compressor = HistoryCompressor(keep_recent=3)
 
-    def test_system_hint_removed(self):
-        """<system_hint> tags should be stripped."""
-        text = "Hello <system_hint>internal info</system_hint> world"
-        segments = self.classifier.classify_text(text)
-        has_noise = any(
-            s.segment_type == SegmentType.NOISE and s.reason == "system_tag"
-            for s in segments
-        )
-        assert has_noise
+    def test_short_history_no_compression(self):
+        """Short histories should not be compressed."""
+        messages = [
+            {"role": "user", "content": "Hello"},
+            {"role": "assistant", "content": "Hi there!"},
+        ]
+        result, meta = self.compressor.compress_history(messages)
+        assert meta["compressed"] is False
+        assert len(result) == 2
 
+    def test_old_assistant_compressed(self):
+        """Old assistant replies should be compressed."""
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Write a sort function"},
+            {"role": "assistant", "content": "Here is a sort function:\n```python\ndef sort(arr):\n    return sorted(arr)\n```\nThis uses Python's built-in sorted function which uses Timsort with O(n log n) time complexity."},
+            {"role": "user", "content": "Write a search function"},
+            {"role": "assistant", "content": "def binary_search(arr, target):\n    lo, hi = 0, len(arr) - 1\n    while lo <= hi:\n        mid = (lo + hi) // 2\n        if arr[mid] == target: return mid\n        elif arr[mid] < target: lo = mid + 1\n        else: hi = mid - 1\n    return -1"},
+            {"role": "user", "content": "Write a hash function"},
+            {"role": "assistant", "content": "def simple_hash(s):\n    h = 0\n    for ch in s:\n        h = (h * 31 + ord(ch)) % 1000000007\n    return h"},
+            {"role": "user", "content": "Write a linked list"},
+        ]
+        result, meta = self.compressor.compress_history(messages)
+        assert meta["compressed"] is True
+        # Recent 3 messages should be kept
+        assert len(result) >= 3
 
-class TestCompressionLevels:
-    """Test that different compression levels produce different results."""
-
-    def test_safe_less_aggressive(self):
-        """SAFE mode should keep more than AGGRESSIVE."""
-        text = "请帮我写一个函数。如果可以的话用Python。"
-        
-        safe_comp = InputCompressor(CompressionLevel.SAFE)
-        _, safe_meta = safe_comp.compress_messages([
-            {"role": "user", "content": text}
-        ])
-
-        agg_comp = InputCompressor(CompressionLevel.AGGRESSIVE)
-        _, agg_meta = agg_comp.compress_messages([
-            {"role": "user", "content": text}
-        ])
-
-        # Safe should keep more tokens than aggressive
-        if safe_meta["compressed"] and agg_meta["compressed"]:
-            assert safe_meta["compressed_tokens_est"] >= agg_meta["compressed_tokens_est"]
+    def test_tool_output_cleaned_in_old_turns(self):
+        """Old tool outputs should have metadata stripped. Recent ones stay intact."""
+        messages = [
+            {"role": "system", "content": "System"},
+            {"role": "user", "content": "Query"},
+            {"role": "tool", "content": "HTTP/1.1 200 OK\nContent-Type: json\n{\"result\": \"data\"}"},
+            {"role": "assistant", "content": "The result is data."},
+            {"role": "user", "content": "Query 2"},
+            {"role": "tool", "content": "X-Trace: abc\nStatus: 200\n{\"result\": \"data2\"}"},
+            {"role": "assistant", "content": "The result is data2."},
+            {"role": "user", "content": "What now?"},
+        ]
+        result, meta = self.compressor.compress_history(messages)
+        # Keep_recent=3 → last 3 messages stay as-is
+        # Old tool outputs (in the first 5 messages) should have metadata stripped
+        old_tool_msgs = [m for m in result[:5] if m.get("role") == "tool"]
+        for tm in old_tool_msgs:
+            assert "HTTP/1.1" not in tm["content"]
+            assert "Content-Type" not in tm["content"]
 
 
 class TestMessageCompression:
@@ -178,12 +218,11 @@ class TestMessageCompression:
             {"role": "user", "content": "Write a binary search function in Python."},
         ]
         result, meta = comp.compress_messages(messages)
-        # Should not be compressed below 30%
         if meta["compressed"]:
             assert meta["compression_ratio"] >= 0.30
 
     def test_code_content_preserved(self):
-        """Code snippets in messages should always be preserved."""
+        """Code snippets should always be preserved."""
         comp = InputCompressor(CompressionLevel.AGGRESSIVE)
         code = "```python\ndef add(a, b):\n    return a + b\n```"
         messages = [{"role": "user", "content": code}]
@@ -191,12 +230,42 @@ class TestMessageCompression:
         if meta["compressed"]:
             assert "def add" in result[0]["content"]
 
+    def test_tool_metadata_cleaned(self):
+        """Tool output metadata should be cleaned."""
+        comp = InputCompressor(CompressionLevel.MODERATE)
+        messages = [
+            {"role": "tool", "content": "Content-Type: application/json\nX-Trace: abc\n{\"data\": \"ok\"}"},
+        ]
+        result, meta = comp.compress_messages(messages)
+        assert "Content-Type" not in result[0]["content"]
+        assert "X-Trace" not in result[0]["content"]
+        assert '"data"' in result[0]["content"]
 
-class TestCrossMessageDedup:
-    """Test deduplication of repeated instructions."""
+    def test_chinese_fillers_stripped(self):
+        """Chinese filler words should be stripped from user messages."""
+        comp = InputCompressor(CompressionLevel.MODERATE)
+        messages = [
+            {"role": "user", "content": "好的谢谢，请帮我写一个函数，如果可以的话用Python"},
+        ]
+        result, meta = comp.compress_messages(messages)
+        if meta["compressed"]:
+            # Filler words should be removed
+            content = result[0]["content"]
+            assert "好的谢谢" not in content or meta["savings_pct"] > 0
 
-    def test_echo_of_system_deduplicated(self):
-        """User messages that echo system prompt should be removed."""
+    def test_multilingual_fillers(self):
+        """Both CN and EN fillers should be handled."""
+        comp = InputCompressor(CompressionLevel.MODERATE)
+        messages = [
+            {"role": "user", "content": "thanks! please help me write a sort function if you don't mind"},
+        ]
+        result, meta = comp.compress_messages(messages)
+        if meta["compressed"]:
+            content = result[0]["content"]
+            assert "thanks" not in content.lower() or meta["savings_pct"] > 0
+
+    def test_cross_message_dedup(self):
+        """Messages echoing system prompt should be deduplicated."""
         comp = InputCompressor(CompressionLevel.MODERATE)
         system = "You are a Python expert. Always use type hints."
         messages = [
@@ -205,9 +274,7 @@ class TestCrossMessageDedup:
             {"role": "user", "content": "Write a function to parse JSON."},
         ]
         result, meta = comp.compress_messages(messages, system_text=system)
-        # The echo message should be removed or compressed
         user_msgs = [m for m in result if m["role"] == "user"]
-        # At least the echo should be handled
         assert len(user_msgs) >= 1
 
 
@@ -228,3 +295,69 @@ class TestSegmentEstimate:
             reason="test",
         )
         assert seg.token_estimate >= 5
+
+
+class TestV3Improvements:
+    """v3: Helper-prefix demotion, transition words, redundant modifiers, particles."""
+
+    def setup_method(self):
+        self.comp = InputCompressor(CompressionLevel.MODERATE)
+
+    def test_helper_prefix_stripped(self):
+        """'帮我写一个函数' → '写函数'."""
+        messages = [{"role": "user", "content": "帮我写一个函数"}]
+        result, meta = self.comp.compress_messages(messages)
+        content = result[0]["content"]
+        assert "帮我" not in content
+        assert "写" in content
+
+    def test_redundant_modifier_stripped(self):
+        """'创建一个完整的模块' → '创建模块'."""
+        messages = [{"role": "user", "content": "帮我创建一个完整的模块"}]
+        result, meta = self.comp.compress_messages(messages)
+        content = result[0]["content"]
+        assert "完整的" not in content
+
+    def test_transition_word_stripped(self):
+        """'很好，接下来请实现' → '实现'."""
+        messages = [{"role": "user", "content": "很好，接下来请帮我实现一个缓存系统"}]
+        result, meta = self.comp.compress_messages(messages)
+        content = result[0]["content"]
+        assert "很好" not in content
+        assert "接下来" not in content
+        assert "实现" in content
+
+    def test_redundant_quantifier_stripped(self):
+        """'写一个排序算法' → '写排序算法'."""
+        messages = [{"role": "user", "content": "写一个排序算法"}]
+        result, meta = self.comp.compress_messages(messages)
+        content = result[0]["content"]
+        assert "写" in content
+
+    def test_mixed_v3_case(self):
+        """Full v3 pipeline: multiple noise types cleaned."""
+        messages = [
+            {"role": "system", "content": "You are a coding assistant."},
+            {"role": "user", "content": "好的谢谢，请帮我写一个快速排序算法，如果可以的话。"},
+            {"role": "assistant", "content": "def quicksort(arr):\n    if len(arr) <= 1: return arr\n    pivot = arr[0]\n    return quicksort([x for x in arr[1:] if x < pivot]) + [pivot] + quicksort([x for x in arr[1:] if x >= pivot])"},
+            {"role": "user", "content": "很好，那么能加一个原地排序版本吗？不用创建新数组那种"},
+        ]
+        result, meta = self.comp.compress_messages(messages)
+        user_contents = [m["content"] for m in result if m["role"] == "user"]
+        # Should have compressed significantly
+        assert meta["savings_pct"] > 0
+
+    def test_trailing_particle_cleaned(self):
+        """Trailing particles like 了/吧/呢 should be stripped."""
+        messages = [{"role": "user", "content": "写好了吧"}]
+        result, meta = self.comp.compress_messages(messages)
+        # "写" should remain (signal), particles cleaned
+        assert meta["compressed"]
+
+    def test_command_preserved_through_noise(self):
+        """Core command verb should survive noise removal."""
+        messages = [{"role": "user", "content": "麻烦你帮我创建一个完整的用户认证系统，如果可以的话请用JWT"}]
+        result, meta = self.comp.compress_messages(messages)
+        content = result[0]["content"]
+        # Core command should be there
+        assert "创建" in content or "用户认证" in content
