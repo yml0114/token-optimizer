@@ -11,3 +11,4 @@ from token_optimizer.core.signal_noise import (
     CompressionLevel,
     SegmentType,
 )
+from token_optimizer.core.smart_compressor import SmartCompressor
