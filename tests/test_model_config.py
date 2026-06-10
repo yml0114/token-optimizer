@@ -22,6 +22,13 @@ class TestGetModelProfile:
         assert profile.cache_price_per_m == 0.20
         assert profile.supports_chat_prefix is False
 
+    def test_mimo_v25_standard_price(self):
+        """MiMo V2.5 standard is cheaper than Pro after the 2026-05-27 price cut."""
+        profile = get_model_profile("mimo-v2.5")
+        assert profile.input_price_per_m == 0.14
+        assert profile.output_price_per_m == 0.28
+        assert profile.cache_price_per_m == 0.0028
+
     def test_alias(self):
         profile = get_model_profile("deepseek-flash")
         assert profile.input_price_per_m == 0.14

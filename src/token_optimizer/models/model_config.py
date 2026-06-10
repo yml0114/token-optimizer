@@ -146,9 +146,9 @@ def estimate_cache_savings(profile: ModelProfile, prefix_tokens: int) -> dict:
 # Additional model profiles (discovered via API testing)
 MIMO_V2_5 = ModelProfile(
     name="mimo-v2.5",
-    input_price_per_m=1.00,
-    output_price_per_m=3.00,
-    cache_price_per_m=0.20,
+    input_price_per_m=0.14,
+    output_price_per_m=0.28,
+    cache_price_per_m=0.0028,
     cache_write_price_per_m=0.0,      # free writes (limited time, Token Plan)
     max_context=1_000_000,
     cache_min_prefix=1024,

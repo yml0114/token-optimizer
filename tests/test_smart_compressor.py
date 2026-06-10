@@ -5,6 +5,7 @@ Flash API calls are mocked.
 """
 
 import json
+from dataclasses import replace
 from unittest.mock import patch
 
 import pytest
@@ -104,20 +105,19 @@ class TestSmartCompressorSmartPath:
             main_model="mimo-v2.5-pro",
             api_key="sk-test-key",
             base_url="https://api.xiaomimimo.com/v1",
+            min_rule_tokens_for_smart=1,
         )
 
     def test_successful_compression(self):
         sc = self._make_configured()
         messages = [
-            {"role": "user", "content": "你好，请帮我写一个排序函数"},
-            {"role": "assistant", "content": "好的！请问需要升序还是降序？"},
-            {"role": "user", "content": "就是快速排序，降序"},
-            {"role": "assistant", "content": "```python\ndef qsort_desc(a):\n    ...\n```"},
+            {"role": "user", "content": "你好，请帮我写一个排序函数，要求快速排序，降序，Python实现" * 20},
+            {"role": "assistant", "content": "好的，我会给你 Python 快速排序降序实现。" * 10},
+            {"role": "user", "content": "请只保留核心代码，不需要解释" * 10},
         ]
         
         flash_output = [
-            {"role": "user", "content": "写降序快速排序函数"},
-            {"role": "assistant", "content": "```python\ndef qsort_desc(a):\n    ...\n```"},
+            {"role": "user", "content": "Python降序快速排序核心代码"},
         ]
         
         with patch.object(sc, '_call_compressor', return_value=flash_output):
@@ -125,11 +125,12 @@ class TestSmartCompressorSmartPath:
         
         assert meta["mode"] == "smart"
         assert meta["compressor"] == "mimo-v2-flash"
-        assert len(result) == 2
+        assert len(result) == 1
+        assert meta["profit_guard"]["actual"]["profitable"] is True
 
     def test_api_error_fallback(self):
         sc = self._make_configured()
-        messages = [{"role": "user", "content": "写个函数"}]
+        messages = [{"role": "user", "content": "请帮我写一个函数，并解释边界条件和测试用例" * 40}]
         
         with patch.object(sc, '_call_compressor', side_effect=Exception("timeout")):
             result, meta = sc.compress(messages)
@@ -139,7 +140,7 @@ class TestSmartCompressorSmartPath:
 
     def test_invalid_json_fallback(self):
         sc = self._make_configured()
-        messages = [{"role": "user", "content": "写个函数"}]
+        messages = [{"role": "user", "content": "请帮我写一个函数，并解释边界条件和测试用例" * 40}]
         
         with patch.object(sc, '_call_compressor', return_value="not json"):
             result, meta = sc.compress(messages)
@@ -149,7 +150,7 @@ class TestSmartCompressorSmartPath:
 
     def test_output_too_long_rejected(self):
         sc = self._make_configured()
-        messages = [{"role": "user", "content": "hi"}]
+        messages = [{"role": "user", "content": "请帮我写一个函数，并解释边界条件和测试用例" * 40}]
         
         with patch.object(sc, '_call_compressor',
                           return_value=[{"role": "user", "content": "x" * 10000}]):
@@ -161,12 +162,12 @@ class TestSmartCompressorSmartPath:
         sc = self._make_configured()
         messages = [
             {"role": "system", "content": "You are helpful."},
-            {"role": "user", "content": "hello"},
+            {"role": "user", "content": "请帮我总结这段长内容" * 80},
         ]
         
         flash_output = [
             {"role": "system", "content": "You are helpful."},
-            {"role": "user", "content": "hello"},
+            {"role": "user", "content": "总结长内容"},
         ]
         
         with patch.object(sc, '_call_compressor', return_value=flash_output):
@@ -193,3 +194,48 @@ class TestSmartCompressorCostMath:
         assert total < raw, "Flash+Pro must be cheaper than raw Pro"
         savings = (1 - total / raw) * 100
         assert savings > 50, f"Expected >50% savings, got {savings:.1f}%"
+
+    def test_short_input_skips_smart_compression(self):
+        """Tiny inputs should not pay the extra cheap-model call."""
+        sc = SmartCompressor(
+            main_model="mimo-v2.5-pro",
+            api_key="sk-test-key",
+            base_url="https://api.xiaomimimo.com/v1",
+        )
+        with patch.object(sc, '_call_compressor', side_effect=AssertionError("should not call cheap model")):
+            result, meta = sc.compress([{"role": "user", "content": "hi"}])
+        assert meta["mode"] == "rule_only_profit_guard"
+        assert "输入过短" in meta["reason"]
+
+    def test_unprofitable_actual_result_falls_back(self):
+        """If cheap model fails to compress enough, keep rule-only result."""
+        sc = SmartCompressor(
+            main_model="mimo-v2.5-pro",
+            api_key="sk-test-key",
+            base_url="https://api.xiaomimimo.com/v1",
+            min_rule_tokens_for_smart=1,
+        )
+        messages = [{"role": "user", "content": "请帮我总结这个项目" * 100}]
+        too_long = [{"role": "user", "content": "请帮我总结这个项目" * 90}]
+
+        with patch.object(sc, '_call_compressor', return_value=too_long):
+            result, meta = sc.compress(messages)
+
+        assert meta["mode"] == "rule_only_profit_guard"
+        assert "收益不足" in meta["reason"]
+        assert meta["profit_guard"]["actual"]["profitable"] is False
+
+    def test_context_guard_skips_cheap_model_when_input_exceeds_window(self):
+        """Cheap model must not be called when rule-compressed input exceeds its context."""
+        sc = SmartCompressor(
+            main_model="mimo-v2.5-pro",
+            api_key="sk-test-key",
+            base_url="https://api.xiaomimimo.com/v1",
+            min_rule_tokens_for_smart=1,
+        )
+        # Use a per-instance route copy, not a global ROUTES mutation.
+        sc.route = replace(sc.route, cheap_max_context=2)
+        with patch.object(sc, '_call_compressor', side_effect=AssertionError("should not call cheap model")):
+            result, meta = sc.compress([{"role": "user", "content": "这是一个明显超过两个token的长输入"}])
+        assert meta["mode"] == "rule_only_context_guard"
+        assert "上下文窗口" in meta["reason"]
