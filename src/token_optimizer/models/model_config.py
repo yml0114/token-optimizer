@@ -24,7 +24,7 @@ class ModelProfile:
 
 
 # ──────────────────────────────────────────────
-#  Known Model Profiles (2026-06-10 pricing)
+#  Known Model Profiles (2026-06-11 pricing)
 # ──────────────────────────────────────────────
 
 DEEPSEEK_V4_FLASH = ModelProfile(
@@ -63,6 +63,18 @@ MIMO_V2_FLASH = ModelProfile(
     supports_chat_prefix=False,
 )
 
+MIMO_V2_5 = ModelProfile(
+    name="mimo-v2.5",
+    input_price_per_m=0.14,
+    output_price_per_m=0.28,
+    cache_price_per_m=0.0028,
+    cache_write_price_per_m=0.0,      # free writes (limited time, Token Plan)
+    max_context=1_000_000,
+    cache_min_prefix=1024,
+    cache_granularity=64,
+    supports_chat_prefix=False,
+)
+
 MIMO_V2_5_PRO = ModelProfile(
     name="mimo-v2.5-pro",
     input_price_per_m=1.00,
@@ -75,6 +87,7 @@ MIMO_V2_5_PRO = ModelProfile(
     supports_chat_prefix=False,
 )
 
+
 # ──────────────────────────────────────────────
 #  Lookup Table
 # ──────────────────────────────────────────────
@@ -84,6 +97,7 @@ _PROFILES: dict[str, ModelProfile] = {
         DEEPSEEK_V4_FLASH,
         DEEPSEEK_V4_PRO,
         MIMO_V2_FLASH,
+        MIMO_V2_5,
         MIMO_V2_5_PRO,
     ]
 }
@@ -97,6 +111,8 @@ _ALIASES: dict[str, str] = {
     "mimo-v2-flash": "mimo-v2-flash",
     "mimo-pro": "mimo-v2.5-pro",
     "mimo-v2.5-pro": "mimo-v2.5-pro",
+    "mimo-v2.5": "mimo-v2.5",
+    "mimo": "mimo-v2.5",
 }
 
 
@@ -142,39 +158,3 @@ def estimate_cache_savings(profile: ModelProfile, prefix_tokens: int) -> dict:
             (prefix_tokens / 1_000_000) * profile.cache_write_price_per_m, 8
         ),
     }
-
-# Additional model profiles (discovered via API testing)
-MIMO_V2_5 = ModelProfile(
-    name="mimo-v2.5",
-    input_price_per_m=0.14,
-    output_price_per_m=0.28,
-    cache_price_per_m=0.0028,
-    cache_write_price_per_m=0.0,      # free writes (limited time, Token Plan)
-    max_context=1_000_000,
-    cache_min_prefix=1024,
-    cache_granularity=64,
-    supports_chat_prefix=False,
-)
-
-# Rebuild lookup tables with all profiles
-_PROFILES: dict[str, ModelProfile] = {
-    p.name: p for p in [
-        DEEPSEEK_V4_FLASH,
-        DEEPSEEK_V4_PRO,
-        MIMO_V2_FLASH,
-        MIMO_V2_5,
-        MIMO_V2_5_PRO,
-    ]
-}
-
-_ALIASES: dict[str, str] = {
-    "deepseek-v4": "deepseek-v4-flash",
-    "deepseek-flash": "deepseek-v4-flash",
-    "deepseek-pro": "deepseek-v4-pro",
-    "mimo-flash": "mimo-v2-flash",
-    "mimo-v2-flash": "mimo-v2-flash",
-    "mimo-pro": "mimo-v2.5-pro",
-    "mimo-v2.5-pro": "mimo-v2.5-pro",
-    "mimo-v2.5": "mimo-v2.5",
-    "mimo": "mimo-v2.5",
-}

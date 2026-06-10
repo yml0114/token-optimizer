@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "token-optimizer"
-version = "0.1.0"
+version = "0.2.0"
 description = "Universal LLM Token Optimization Engine - Save 80-90% on API costs"
 readme = "README.md"
 license = "MIT"
@@ -12,7 +12,7 @@ requires-python = ">=3.10"
 authors = [{ name = "Token Optimizer Team" }]
 keywords = ["llm", "token", "optimization", "cache", "deepseek", "mimo"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
