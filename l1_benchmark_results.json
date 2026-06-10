@@ -1,0 +1,176 @@
+[
+  {
+    "level": "safe",
+    "total_original": 1367,
+    "total_compressed": 1192,
+    "total_savings_pct": 12.8,
+    "scenarios": [
+      {
+        "scenario": "Coding request with Chinese fillers",
+        "level": "safe",
+        "original_tokens_est": 247,
+        "compressed_tokens_est": 236,
+        "savings_tokens": 11,
+        "savings_pct": 4.5,
+        "messages_in": 4,
+        "messages_out": 4
+      },
+      {
+        "scenario": "Tool output with HTTP/trace noise",
+        "level": "safe",
+        "original_tokens_est": 224,
+        "compressed_tokens_est": 171,
+        "savings_tokens": 53,
+        "savings_pct": 23.7,
+        "messages_in": 4,
+        "messages_out": 4
+      },
+      {
+        "scenario": "Error debugging with stack trace",
+        "level": "safe",
+        "original_tokens_est": 208,
+        "compressed_tokens_est": 205,
+        "savings_tokens": 3,
+        "savings_pct": 1.4,
+        "messages_in": 4,
+        "messages_out": 4
+      },
+      {
+        "scenario": "Multi-turn with system tags and fillers",
+        "level": "safe",
+        "original_tokens_est": 503,
+        "compressed_tokens_est": 402,
+        "savings_tokens": 101,
+        "savings_pct": 20.1,
+        "messages_in": 6,
+        "messages_out": 6
+      },
+      {
+        "scenario": "English coding with API response noise",
+        "level": "safe",
+        "original_tokens_est": 185,
+        "compressed_tokens_est": 178,
+        "savings_tokens": 7,
+        "savings_pct": 3.8,
+        "messages_in": 4,
+        "messages_out": 4
+      }
+    ]
+  },
+  {
+    "level": "moderate",
+    "total_original": 1367,
+    "total_compressed": 1192,
+    "total_savings_pct": 12.8,
+    "scenarios": [
+      {
+        "scenario": "Coding request with Chinese fillers",
+        "level": "moderate",
+        "original_tokens_est": 247,
+        "compressed_tokens_est": 236,
+        "savings_tokens": 11,
+        "savings_pct": 4.5,
+        "messages_in": 4,
+        "messages_out": 4
+      },
+      {
+        "scenario": "Tool output with HTTP/trace noise",
+        "level": "moderate",
+        "original_tokens_est": 224,
+        "compressed_tokens_est": 171,
+        "savings_tokens": 53,
+        "savings_pct": 23.7,
+        "messages_in": 4,
+        "messages_out": 4
+      },
+      {
+        "scenario": "Error debugging with stack trace",
+        "level": "moderate",
+        "original_tokens_est": 208,
+        "compressed_tokens_est": 205,
+        "savings_tokens": 3,
+        "savings_pct": 1.4,
+        "messages_in": 4,
+        "messages_out": 4
+      },
+      {
+        "scenario": "Multi-turn with system tags and fillers",
+        "level": "moderate",
+        "original_tokens_est": 503,
+        "compressed_tokens_est": 402,
+        "savings_tokens": 101,
+        "savings_pct": 20.1,
+        "messages_in": 6,
+        "messages_out": 6
+      },
+      {
+        "scenario": "English coding with API response noise",
+        "level": "moderate",
+        "original_tokens_est": 185,
+        "compressed_tokens_est": 178,
+        "savings_tokens": 7,
+        "savings_pct": 3.8,
+        "messages_in": 4,
+        "messages_out": 4
+      }
+    ]
+  },
+  {
+    "level": "aggressive",
+    "total_original": 1367,
+    "total_compressed": 1192,
+    "total_savings_pct": 12.8,
+    "scenarios": [
+      {
+        "scenario": "Coding request with Chinese fillers",
+        "level": "aggressive",
+        "original_tokens_est": 247,
+        "compressed_tokens_est": 236,
+        "savings_tokens": 11,
+        "savings_pct": 4.5,
+        "messages_in": 4,
+        "messages_out": 4
+      },
+      {
+        "scenario": "Tool output with HTTP/trace noise",
+        "level": "aggressive",
+        "original_tokens_est": 224,
+        "compressed_tokens_est": 171,
+        "savings_tokens": 53,
+        "savings_pct": 23.7,
+        "messages_in": 4,
+        "messages_out": 4
+      },
+      {
+        "scenario": "Error debugging with stack trace",
+        "level": "aggressive",
+        "original_tokens_est": 208,
+        "compressed_tokens_est": 205,
+        "savings_tokens": 3,
+        "savings_pct": 1.4,
+        "messages_in": 4,
+        "messages_out": 4
+      },
+      {
+        "scenario": "Multi-turn with system tags and fillers",
+        "level": "aggressive",
+        "original_tokens_est": 503,
+        "compressed_tokens_est": 402,
+        "savings_tokens": 101,
+        "savings_pct": 20.1,
+        "messages_in": 6,
+        "messages_out": 6
+      },
+      {
+        "scenario": "English coding with API response noise",
+        "level": "aggressive",
+        "original_tokens_est": 185,
+        "compressed_tokens_est": 178,
+        "savings_tokens": 7,
+        "savings_pct": 3.8,
+        "messages_in": 4,
+        "messages_out": 4
+      }
+    ]
+  }
+]

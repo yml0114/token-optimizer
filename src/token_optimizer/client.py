@@ -20,6 +20,7 @@ from token_optimizer.core.prompt_reorderer import (
     reorder_messages,
     strip_dynamic_fields,
 )
+from token_optimizer.core.signal_noise import InputCompressor, CompressionLevel
 from token_optimizer.core.cache_manager import CacheManager
 from token_optimizer.metrics.cost_tracker import CostTracker
 from token_optimizer.models.model_config import (
@@ -63,6 +64,10 @@ class TokenOptimizer:
         self._cache = CacheManager()
         self._cost_tracker = CostTracker(config.model)
 
+        # L1: Input compressor
+        comp_level = CompressionLevel(config.compression_level)
+        self._compressor = InputCompressor(level=comp_level)
+
         # HTTP client
         self._http = httpx.AsyncClient(
             base_url=config.base_url,
@@ -93,6 +98,18 @@ class TokenOptimizer:
 
         # ── Step 1: Strip dynamic fields that break prefix ──
         cleaned = strip_dynamic_fields(messages)
+
+        # ── Step 1.5: L1 — Compress input by removing noise ──
+        compression_meta = {"compressed": False, "savings_pct": 0}
+        if self._config.enable_input_compression and cleaned:
+            system_text = ""
+            for m in cleaned:
+                if m.get("role") == "system":
+                    system_text = m.get("content", "")
+                    break
+            cleaned, compression_meta = self._compressor.compress_messages(
+                cleaned, system_text=system_text
+            )
 
         # ── Step 2: L0 — Reorder for cache alignment ──
         if self._config.enable_prefix_reorder:
@@ -172,6 +189,7 @@ class TokenOptimizer:
             "cache_hit": cache_hit,
             "cached_tokens": cached_tokens,
             "input_compression": reorder_meta,
+            "l1_compression": compression_meta,
             "cost": {
                 "raw": cache_savings["raw_cost"],
                 "actual": cost_entry.actual_input_cost,

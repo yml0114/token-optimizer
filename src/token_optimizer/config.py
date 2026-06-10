@@ -30,6 +30,10 @@ class OptimizerConfig:
     cache_min_prefix_tokens: int = 1024   # DeepSeek minimum cache prefix
     cache_granularity: int = 64           # DeepSeek cache storage unit
 
+    # --- L1: Input Compression ---
+    enable_input_compression: bool = True
+    compression_level: str = "moderate"  # "safe" | "moderate" | "aggressive"
+
     # --- General ---
     max_retries: int = 2
     request_timeout: float = 120.0
