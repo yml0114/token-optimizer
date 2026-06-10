@@ -616,3 +616,40 @@ class TestSmartCompressorShadowTelemetry:
         assert telemetry["would_call_smart"] is False
         assert telemetry["would_fallback_reason"] == "context_guard"
         assert telemetry["candidate_diagnostics"][0]["blocked_by_context"] is True
+
+
+
+def test_smart_compressor_model_probe_updates_route_and_metadata():
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"data": [{"id": "mimo-v2.5-pro"}, {"id": "mimo-v2-flash"}]}
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def get(self, url, headers=None):
+            return FakeResponse()
+
+    with patch("token_optimizer.core.model_probe.httpx.Client", FakeClient):
+        sc = SmartCompressor(
+            main_model="mimo-v2.5-pro",
+            api_key="sk-test-key",
+            base_url="https://platform.xiaomimimo.com/v1",
+            min_rule_tokens_for_smart=1,
+            enable_model_probe=True,
+        )
+    telemetry = sc.shadow_evaluate([{"role": "user", "content": "请总结这段很长的项目上下文" * 80}])
+    assert telemetry["route"]["probe"]["enabled"] is True
+    assert telemetry["route"]["probe"]["available"] is True
+    assert telemetry["route"]["probe"]["source"] == "models_inventory"
+    assert telemetry["selected_candidate"] == "mimo-v2-flash"

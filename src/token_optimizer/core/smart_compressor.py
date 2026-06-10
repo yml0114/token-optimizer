@@ -752,6 +752,7 @@ class SmartCompressor:
         circuit_breaker_cooldown: int = 20,
         min_fidelity_score: float = DEFAULT_MIN_FIDELITY_SCORE,
         protected_min_fidelity_score: float = DEFAULT_PROTECTED_MIN_FIDELITY_SCORE,
+        enable_model_probe: bool = False,
     ):
         self.main_model = main_model
         self.level = level
@@ -777,6 +778,16 @@ class SmartCompressor:
         self.protected_min_fidelity_score = protected_min_fidelity_score
         self.current_protected_spans: list[ProtectedSpan] = []
         self._compress_calls = 0
+
+        self.enable_model_probe = enable_model_probe
+        self.probe_result = None
+        if enable_model_probe and main_model:
+            from token_optimizer.core.model_probe import ProviderModelProbe
+            self.probe_result = ProviderModelProbe(base_url, api_key, timeout=min(timeout, 10.0)).probe(main_model)
+            if self.probe_result.route is not None:
+                self.route = self.probe_result.route
+                self.active_option = self.route.cheap_options[0]
+                self.compressor_model = self.active_option.model
 
         self.is_configured = bool(self.route and api_key and base_url)
 
@@ -1020,6 +1031,17 @@ class SmartCompressor:
                 "candidates": [option.model for option in self.route.cheap_options],
                 "main_input_price": self.route.main_input_price,
                 "main_output_price": self.route.main_output_price,
+                "probe": (
+                    {
+                        "enabled": self.enable_model_probe,
+                        "available": self.probe_result.available,
+                        "source": self.probe_result.source,
+                        "provider": self.probe_result.provider,
+                        "models_seen": list(self.probe_result.models_seen),
+                        "failure_reason": self.probe_result.failure_reason,
+                    }
+                    if self.probe_result else {"enabled": self.enable_model_probe}
+                ),
             }
 
         estimated_raw_cost = None
@@ -1336,6 +1358,17 @@ class SmartCompressor:
                 "main_input_price": self.route.main_input_price,
                 "cheap_input_price": active.input_price,
                 "cheap_max_context": active.max_context,
+                "probe": (
+                    {
+                        "enabled": self.enable_model_probe,
+                        "available": self.probe_result.available,
+                        "source": self.probe_result.source,
+                        "provider": self.probe_result.provider,
+                        "models_seen": list(self.probe_result.models_seen),
+                        "failure_reason": self.probe_result.failure_reason,
+                    }
+                    if self.probe_result else {"enabled": self.enable_model_probe}
+                ),
             }
         return {
             "mode": mode,
