@@ -289,3 +289,59 @@ class TestSmartCompressorTokenizerAndRouting:
         assert meta["compressor"] == "custom-cheap-compressor"
         assert meta["route"]["selected_candidate"] == "custom-cheap-compressor"
         assert meta["profit_guard"]["projected"]["candidate"] == "custom-cheap-compressor"
+
+
+class TestSmartCompressorSelfLearningRepair:
+    """Verify learning feedback and self-repair cost guards."""
+
+    def _make_configured(self):
+        return SmartCompressor(
+            main_model="mimo-v2.5-pro",
+            api_key="sk-test-key",
+            base_url="https://api.xiaomimimo.com/v1",
+            min_rule_tokens_for_smart=1,
+            max_consecutive_failures=2,
+            circuit_breaker_cooldown=10,
+        )
+
+    def test_learning_updates_expected_ratio_after_success(self):
+        sc = self._make_configured()
+        messages = [{"role": "user", "content": "请总结这段长项目上下文" * 120}]
+        short_output = [{"role": "user", "content": "项目上下文摘要"}]
+
+        before = sc._project_profit(300, sc.active_option)["expected_smart_ratio"]
+        with patch.object(sc, '_call_compressor', return_value=short_output):
+            result, meta = sc.compress(messages)
+        after = sc._project_profit(300, sc.active_option)["expected_smart_ratio"]
+
+        assert meta["mode"] == "smart"
+        assert meta["profit_guard"]["learning"]["mimo-v2-flash"]["successes"] == 1
+        assert after < before
+
+    def test_circuit_breaker_stops_repeated_broken_compressor_calls(self):
+        sc = self._make_configured()
+        messages = [{"role": "user", "content": "请总结这段长项目上下文" * 120}]
+        too_long = [{"role": "user", "content": "请总结这段长项目上下文" * 100}]
+
+        with patch.object(sc, '_call_compressor', return_value=too_long) as mocked_call:
+            _, meta1 = sc.compress(messages)
+            _, meta2 = sc.compress(messages)
+        assert mocked_call.call_count == 2
+        assert meta1["mode"] == "rule_only_profit_guard"
+        assert meta2["profit_guard"]["learning"]["mimo-v2-flash"]["consecutive_failures"] == 2
+
+        with patch.object(sc, '_call_compressor', side_effect=AssertionError("circuit should prevent API cost")):
+            _, meta3 = sc.compress(messages)
+        assert meta3["mode"] == "rule_only_self_repair"
+        assert "熔断" in meta3["reason"]
+        assert meta3["profit_guard"]["candidate_diagnostics"][0]["blocked_by_circuit"] is True
+
+    def test_rule_compressor_exception_passthrough_without_api_call(self):
+        sc = self._make_configured()
+        messages = [{"role": "user", "content": "这个请求不能因为压缩崩溃而失败"}]
+        with patch.object(sc.rule_compressor, 'compress_messages', side_effect=RuntimeError("boom")):
+            with patch.object(sc, '_call_compressor', side_effect=AssertionError("should not call cheap model")):
+                result, meta = sc.compress(messages)
+        assert result == messages
+        assert meta["mode"] == "safe_passthrough_repair"
+        assert "未调用廉价模型" in meta["reason"]

@@ -95,6 +95,32 @@ class ModelRoute:
         return self.cheap_options[0].note
 
 
+@dataclass
+class CandidateLearningStats:
+    """Runtime feedback for a cheap compressor candidate.
+
+    This is deliberately local/in-memory: it makes the current process safer without
+    needing a database. Callers can later persist this if they want fleet learning.
+    """
+
+    attempts: int = 0
+    successes: int = 0
+    failures: int = 0
+    consecutive_failures: int = 0
+    total_ratio: float = 0.0
+    total_savings_pct: float = 0.0
+    disabled_until_call: int = 0
+    last_reason: str = ""
+
+    @property
+    def avg_ratio(self) -> float | None:
+        return self.total_ratio / self.successes if self.successes else None
+
+    @property
+    def avg_savings_pct(self) -> float | None:
+        return self.total_savings_pct / self.successes if self.successes else None
+
+
 def _mimo_flash(note: str) -> CheapModelOption:
     return CheapModelOption(
         model="mimo-v2-flash",
@@ -386,6 +412,9 @@ class SmartCompressor:
         min_profit_margin: float = DEFAULT_MIN_PROFIT_MARGIN,
         min_rule_tokens_for_smart: int = 128,
         expected_smart_ratio: float = DEFAULT_SMART_TARGET_RATIO,
+        learning_enabled: bool = True,
+        max_consecutive_failures: int = 2,
+        circuit_breaker_cooldown: int = 20,
     ):
         self.main_model = main_model
         self.level = level
@@ -399,6 +428,11 @@ class SmartCompressor:
         self.min_profit_margin = min_profit_margin
         self.min_rule_tokens_for_smart = min_rule_tokens_for_smart
         self.expected_smart_ratio = expected_smart_ratio
+        self.learning_enabled = learning_enabled
+        self.max_consecutive_failures = max_consecutive_failures
+        self.circuit_breaker_cooldown = circuit_breaker_cooldown
+        self.learning_stats: dict[str, CandidateLearningStats] = {}
+        self._compress_calls = 0
 
         self.is_configured = bool(self.route and api_key and base_url)
 
@@ -408,9 +442,19 @@ class SmartCompressor:
         system_text: str = "",
     ) -> tuple[list[dict[str, Any]], dict]:
         """Compress messages using rule-only or profit-aware smart compression."""
-        rule_result, rule_meta = self.rule_compressor.compress_messages(
-            messages, system_text=system_text
-        )
+        self._compress_calls += 1
+        try:
+            rule_result, rule_meta = self.rule_compressor.compress_messages(
+                messages, system_text=system_text
+            )
+        except Exception as e:
+            # Self-repair guard: compression must never break the main request path
+            # or cause extra model spend. Return original messages and avoid API calls.
+            return messages, self._meta(
+                mode="safe_passthrough_repair",
+                reason=f"规则压缩器异常，已安全旁路且未调用廉价模型: {str(e)[:200]}",
+                rule_meta={"error": str(e)[:200]},
+            )
 
         if not self.is_configured or not self.route:
             return rule_result, self._meta(
@@ -430,16 +474,36 @@ class SmartCompressor:
                 projected=self._project_profit(rule_tokens),
             )
 
-        selected, projected, diagnostics = self._select_best_option(rule_tokens)
+        try:
+            selected, projected, diagnostics = self._select_best_option(rule_tokens)
+        except Exception as e:
+            if selected is not None:
+                self._record_learning(selected, success=False, reason="api_exception")
+            return rule_result, self._meta(
+                mode="rule_only_self_repair",
+                reason=f"候选路由器异常，已安全回退纯规则且未调用廉价模型: {str(e)[:200]}",
+                rule_meta=rule_meta,
+            )
+
         if selected is None:
             all_context_blocked = bool(diagnostics) and all(
                 item.get("blocked_by_context") for item in diagnostics
             )
+            all_circuit_blocked = bool(diagnostics) and all(
+                item.get("blocked_by_circuit") for item in diagnostics
+            )
             return rule_result, self._meta(
-                mode="rule_only_context_guard" if all_context_blocked else "rule_only_profit_guard",
+                mode=(
+                    "rule_only_context_guard" if all_context_blocked
+                    else "rule_only_self_repair" if all_circuit_blocked
+                    else "rule_only_profit_guard"
+                ),
                 reason=(
                     "规则压缩后仍超过所有廉价模型上下文窗口，回退主模型纯规则路径"
-                    if all_context_blocked else "所有廉价模型候选预测收益不足，不调用模型压缩"
+                    if all_context_blocked else
+                    "廉价模型连续失败，熔断自修复中，本次回退纯规则以避免费用放大"
+                    if all_circuit_blocked else
+                    "所有廉价模型候选预测收益不足，不调用模型压缩"
                 ),
                 rule_meta=rule_meta,
                 projected=projected,
@@ -453,6 +517,7 @@ class SmartCompressor:
             smart_result = self._call_compressor(rule_result)
 
             if not self._validate(smart_result, messages):
+                self._record_learning(selected, success=False, reason="validation_failed")
                 return rule_result, self._meta(
                     mode="rule_only_fallback",
                     reason="廉价模型输出校验未通过（过长/丢失system/缺失user）",
@@ -472,6 +537,14 @@ class SmartCompressor:
                 not actual_profit["profitable"]
                 or actual_profit["savings_pct"] < self.min_profit_margin * 100
             ):
+                self._record_learning(
+                    selected,
+                    success=False,
+                    reason="actual_profit_insufficient",
+                    rule_tokens=rule_tokens,
+                    final_tokens=final_tokens,
+                    actual_profit=actual_profit,
+                )
                 return rule_result, self._meta(
                     mode="rule_only_profit_guard",
                     reason="实际压缩结果收益不足，回退纯规则",
@@ -480,6 +553,15 @@ class SmartCompressor:
                     actual_profit=actual_profit,
                     candidate_diagnostics=diagnostics,
                 )
+
+            self._record_learning(
+                selected,
+                success=True,
+                reason="success",
+                rule_tokens=rule_tokens,
+                final_tokens=final_tokens,
+                actual_profit=actual_profit,
+            )
 
             return smart_result, self._meta(
                 mode="smart",
@@ -499,6 +581,8 @@ class SmartCompressor:
             )
 
         except Exception as e:
+            if selected is not None:
+                self._record_learning(selected, success=False, reason="api_exception")
             return rule_result, self._meta(
                 mode="rule_only_fallback",
                 reason=f"廉价模型调用失败: {str(e)[:200]}",
@@ -507,19 +591,35 @@ class SmartCompressor:
                 candidate_diagnostics=diagnostics,
             )
 
+    def _expected_ratio_for(self, option: CheapModelOption | None = None) -> float:
+        """Learned expected compression ratio for cost projection.
+
+        Successful real calls update the ratio. We use a small optimism buffer but
+        clamp it, so projections gradually improve without becoming reckless.
+        """
+        if not self.learning_enabled or option is None:
+            return self.expected_smart_ratio
+        stats = self.learning_stats.get(option.model)
+        if not stats or stats.avg_ratio is None:
+            return self.expected_smart_ratio
+        return min(0.95, max(0.05, stats.avg_ratio * 1.10))
+
     def _project_profit(
         self,
         rule_tokens: int,
         option: CheapModelOption | None = None,
     ) -> dict[str, float | bool | str]:
         assert self.route is not None
-        expected_smart_tokens = max(1, int(rule_tokens * self.expected_smart_ratio))
-        return estimate_route_profit(
+        expected_ratio = self._expected_ratio_for(option)
+        expected_smart_tokens = max(1, int(rule_tokens * expected_ratio))
+        projection = estimate_route_profit(
             self.route,
             rule_tokens,
             expected_smart_tokens,
             cheap_option=option,
         )
+        projection["expected_smart_ratio"] = round(expected_ratio, 4)
+        return projection
 
     def _select_best_option(
         self,
@@ -532,6 +632,17 @@ class SmartCompressor:
         best_projection: dict | None = None
 
         for option in self.route.cheap_options:
+            stats = self.learning_stats.get(option.model)
+            if stats and stats.disabled_until_call > self._compress_calls:
+                diagnostics.append({
+                    "candidate": option.model,
+                    "blocked_by_circuit": True,
+                    "disabled_until_call": stats.disabled_until_call,
+                    "consecutive_failures": stats.consecutive_failures,
+                    "last_reason": stats.last_reason,
+                })
+                continue
+
             if rule_tokens > option.max_context:
                 diagnostics.append({
                     "candidate": option.model,
@@ -543,7 +654,17 @@ class SmartCompressor:
             projection = self._project_profit(rule_tokens, option=option)
             projection = dict(projection)
             projection["blocked_by_context"] = False
+            projection["blocked_by_circuit"] = False
             projection["cheap_max_context"] = option.max_context
+            if stats:
+                projection["learning"] = {
+                    "attempts": stats.attempts,
+                    "successes": stats.successes,
+                    "failures": stats.failures,
+                    "consecutive_failures": stats.consecutive_failures,
+                    "avg_ratio": round(stats.avg_ratio, 4) if stats.avg_ratio is not None else None,
+                    "avg_savings_pct": round(stats.avg_savings_pct, 2) if stats.avg_savings_pct is not None else None,
+                }
             diagnostics.append(projection)
 
             if not projection["profitable"] or projection["savings_pct"] < self.min_profit_margin * 100:
@@ -553,6 +674,42 @@ class SmartCompressor:
                 best_projection = projection
 
         return best_option, best_projection, diagnostics
+
+    def _record_learning(
+        self,
+        option: CheapModelOption,
+        success: bool,
+        reason: str,
+        rule_tokens: int | None = None,
+        final_tokens: int | None = None,
+        actual_profit: dict | None = None,
+    ) -> None:
+        """Record feedback and open a circuit breaker after repeated failures.
+
+        This prevents a broken/low-quality compressor from being called repeatedly
+        and increasing total cost. The next calls fall back to rule-only until the
+        cooldown expires.
+        """
+        if not self.learning_enabled:
+            return
+
+        stats = self.learning_stats.setdefault(option.model, CandidateLearningStats())
+        stats.attempts += 1
+        stats.last_reason = reason
+
+        if success:
+            stats.successes += 1
+            stats.consecutive_failures = 0
+            if rule_tokens and final_tokens is not None and rule_tokens > 0:
+                stats.total_ratio += final_tokens / rule_tokens
+            if actual_profit and isinstance(actual_profit.get("savings_pct"), (int, float)):
+                stats.total_savings_pct += float(actual_profit["savings_pct"])
+            return
+
+        stats.failures += 1
+        stats.consecutive_failures += 1
+        if stats.consecutive_failures >= self.max_consecutive_failures:
+            stats.disabled_until_call = self._compress_calls + self.circuit_breaker_cooldown
 
     def _meta(
         self,
@@ -591,6 +748,19 @@ class SmartCompressor:
                 "projected": projected,
                 "actual": actual_profit,
                 "candidate_diagnostics": candidate_diagnostics,
+                "learning": {
+                    model: {
+                        "attempts": stats.attempts,
+                        "successes": stats.successes,
+                        "failures": stats.failures,
+                        "consecutive_failures": stats.consecutive_failures,
+                        "disabled_until_call": stats.disabled_until_call,
+                        "avg_ratio": round(stats.avg_ratio, 4) if stats.avg_ratio is not None else None,
+                        "avg_savings_pct": round(stats.avg_savings_pct, 2) if stats.avg_savings_pct is not None else None,
+                        "last_reason": stats.last_reason,
+                    }
+                    for model, stats in self.learning_stats.items()
+                },
             },
             "rule_compression": rule_meta,
             "smart_compression": smart_compression,
