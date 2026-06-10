@@ -21,6 +21,7 @@ MiMo 特别说明：
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
@@ -44,6 +45,8 @@ DEFAULT_EXTREME_SMART_TARGET_RATIO = 0.22
 DEFAULT_PROTECTED_SMART_TARGET_RATIO = 0.45
 DEFAULT_SMART_TARGET_RATIO = DEFAULT_SAFE_SMART_TARGET_RATIO
 DEFAULT_MIN_PROFIT_MARGIN = 0.05  # require at least 5% cheaper than rule-only
+DEFAULT_MIN_FIDELITY_SCORE = 0.78
+DEFAULT_PROTECTED_MIN_FIDELITY_SCORE = 0.88
 
 
 @dataclass(frozen=True)
@@ -137,6 +140,18 @@ class CompressionPolicy:
     target_ratio: float
     reason: str
     risk_score: int
+
+
+@dataclass(frozen=True)
+class FidelityReport:
+    """Cheap deterministic semantic-fidelity guard report."""
+
+    score: float
+    passed: bool
+    threshold: float
+    coverage: dict[str, float]
+    missing: dict[str, list[str]]
+    original_signal_count: dict[str, int]
 
 
 HIGH_RISK_KEYWORDS = (
@@ -453,6 +468,185 @@ def estimate_route_profit(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Fidelity guards
+# ══════════════════════════════════════════════════════════════════════════════
+
+_SIGNAL_PATTERNS: dict[str, str] = {
+    "numbers": r"(?<![\w.])(?:\d+(?:\.\d+)?%?|[$¥]\s*\d+(?:\.\d+)?|\d+(?:\.\d+)?\s*(?:ms|s|kg|mb|gb|k|m|万|亿))(?![\w.])",
+    "paths": r"(?:/[\w.\-\u4e00-\u9fff]+){2,}|[A-Za-z]:\\(?:[^\\\s]+\\?)+|[\w.\-]+\.(?:py|js|ts|tsx|jsx|json|md|yaml|yml|txt|csv|xlsx|pdf)",
+    "urls": r"https?://[^\s)\]}>\"，。；：、]+",
+    "code_symbols": r"\b(?:def|class|import|from|return|async|await|function|const|let|var|SELECT|INSERT|UPDATE|DELETE)\b|[A-Za-z_][A-Za-z0-9_]{2,}\(",
+    "constraints": r"(?:必须|不能|不要|禁止|一定|只允许|至少|最多|保留|完整|优先|不得|must|never|only|required|forbidden)",
+}
+
+_SIGNAL_WEIGHTS: dict[str, float] = {
+    "numbers": 0.20,
+    "paths": 0.20,
+    "urls": 0.12,
+    "code_symbols": 0.20,
+    "constraints": 0.18,
+    "latest_user_keywords": 0.10,
+}
+
+_STOPWORDS = {
+    "the", "and", "for", "with", "this", "that", "请", "帮我", "一个", "这个", "那个", "就是", "可以", "需要", "进行", "我们", "你", "我",
+    "谢谢", "你好", "好的", "就是说", "大概", "一下", "请只", "不需要", "解释", "保留", "核心", "代码",
+}
+
+
+def _messages_text(messages: list[dict[str, Any]]) -> str:
+    return "\n".join(
+        str(msg.get("content", "")) for msg in messages if isinstance(msg.get("content", ""), str)
+    )
+
+
+def _unique_matches(pattern: str, text: str, *, flags: int = re.IGNORECASE) -> list[str]:
+    values: list[str] = []
+    seen: set[str] = set()
+    for match in re.findall(pattern, text, flags):
+        value = match if isinstance(match, str) else "".join(match)
+        value = value.strip().strip('.,;:，。；：')
+        if not value:
+            continue
+        key = value.lower()
+        if key not in seen:
+            seen.add(key)
+            values.append(value)
+    return values
+
+
+def _latest_user_keywords(messages: list[dict[str, Any]], limit: int = 12) -> list[str]:
+    latest = ""
+    for msg in reversed(messages):
+        if msg.get("role") == "user" and isinstance(msg.get("content"), str):
+            latest = msg["content"]
+            break
+    if not latest:
+        return []
+
+    keywords: list[str] = []
+    seen: set[str] = set()
+
+    # ASCII identifiers / product names / function-like terms.
+    for token in re.findall(r"[A-Za-z][A-Za-z0-9_\-]{3,}", latest):
+        key = token.lower()
+        if key not in _STOPWORDS and key not in seen:
+            seen.add(key)
+            keywords.append(token)
+
+    # CJK: first capture common semantic compounds; then fall back to compact chunks.
+    cjk_runs = re.findall(r"[\u4e00-\u9fff]{2,}", latest)
+    semantic_terms = (
+        "项目上下文", "上下文", "长内容", "核心代码", "快速排序", "排序函数",
+        "历史背景", "错误信息", "测试用例", "边界条件", "压缩", "总结", "代码",
+    )
+    for term in semantic_terms:
+        if term in latest and term not in seen:
+            seen.add(term)
+            keywords.append(term)
+            if len(keywords) >= limit:
+                return keywords
+
+    for run in cjk_runs:
+        # Repeated test prompts often concatenate the same sentence many times.
+        # Limit the window to avoid extracting boundary artifacts like "内容请帮".
+        compact = run[: min(len(run), 24)]
+        for size in (4, 3, 2):
+            for i in range(0, max(1, len(compact) - size + 1), size):
+                token = compact[i:i + size]
+                if len(token) < 2:
+                    continue
+                key = token.lower()
+                if key in _STOPWORDS or key in seen:
+                    continue
+                if any(stop in key for stop in ("谢谢", "你好", "就是", "大概", "请帮", "请压", "不需要解释")):
+                    continue
+                seen.add(key)
+                keywords.append(token)
+                if len(keywords) >= limit:
+                    return keywords
+    return keywords[:limit]
+
+
+def extract_critical_signals(messages: list[dict[str, Any]]) -> dict[str, list[str]]:
+    """Extract deterministic critical signals that compression must preserve."""
+    text = _messages_text(messages)
+    signals = {name: _unique_matches(pattern, text)[:32] for name, pattern in _SIGNAL_PATTERNS.items()}
+    # Single generic modal words like "保留" / "必须" are too broad to require
+    # verbatim preservation. Concrete objects around them are covered by latest
+    # user keywords and hard signals.
+    generic_constraints = {"必须", "不能", "不要", "禁止", "一定", "保留", "完整", "优先", "不得"}
+    signals["constraints"] = [
+        value for value in signals.get("constraints", [])
+        if value not in generic_constraints and len(value) > 2
+    ]
+    signals["latest_user_keywords"] = _latest_user_keywords(messages)
+    return signals
+
+
+def score_semantic_fidelity(
+    original: list[dict[str, Any]],
+    compressed: list[dict[str, Any]],
+    *,
+    policy: CompressionPolicy | None = None,
+) -> FidelityReport:
+    """Score whether compressed messages preserve high-value task signals.
+
+    This is not a replacement for LLM judge; it is a zero-cost production guard.
+    If it fails, we do not send the lossy compressed result to the main model.
+    """
+    original_signals = extract_critical_signals(original)
+    compressed_text = _messages_text(compressed).lower()
+    coverage: dict[str, float] = {}
+    missing: dict[str, list[str]] = {}
+
+    weighted_score = 0.0
+    active_weight = 0.0
+    for name, values in original_signals.items():
+        weight = _SIGNAL_WEIGHTS[name]
+        if not values:
+            coverage[name] = 1.0
+            continue
+        if name == "latest_user_keywords":
+            kept = [value for value in values if value.lower() in compressed_text]
+            # For low-risk natural-language asks, preserving the main intent keywords is enough;
+            # do not require every extracted filler-adjacent chunk to survive verbatim.
+            coverage[name] = min(1.0, len(kept) / max(1, min(3, len(values))))
+            missed = [value for value in values if value.lower() not in compressed_text]
+        else:
+            kept = [value for value in values if value.lower() in compressed_text]
+            missed = [value for value in values if value.lower() not in compressed_text]
+            coverage[name] = len(kept) / len(values)
+        if missed:
+            missing[name] = missed[:8]
+        weighted_score += coverage[name] * weight
+        active_weight += weight
+
+    score = weighted_score / active_weight if active_weight > 0 else 1.0
+    hard_signal_count = sum(
+        len(original_signals.get(name, []))
+        for name in ("numbers", "paths", "urls", "code_symbols")
+    )
+    if policy and policy.mode == "protected":
+        threshold = DEFAULT_PROTECTED_MIN_FIDELITY_SCORE
+    elif hard_signal_count == 0:
+        # Natural-language summaries should not be blocked just because a few
+        # low-value phrase chunks were paraphrased. Hard signals still use the
+        # normal threshold.
+        threshold = min(DEFAULT_MIN_FIDELITY_SCORE, 0.55)
+    else:
+        threshold = DEFAULT_MIN_FIDELITY_SCORE
+    return FidelityReport(
+        score=round(score, 4),
+        passed=score >= threshold,
+        threshold=threshold,
+        coverage={k: round(v, 4) for k, v in coverage.items()},
+        missing=missing,
+        original_signal_count={k: len(v) for k, v in original_signals.items()},
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Compression prompt
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -472,6 +666,7 @@ COMPRESSION_SYSTEM_PROMPT = """你是一个精确的输入压缩器。压缩对�
 6. 工具输出只保留可复现任务所需的关键数据
 7. 多轮历史要合并重复意图，保留最终决定，不保留寒暄和过程性解释
 8. 如果压缩会导致信息丢失，宁可少压缩
+9. 数字、路径、URL、API参数、函数名、错误类型、强约束词必须尽量原样保留
 
 输出要求：
 - 保持 JSON 数组格式，元素 {"role": "...", "content": "..."}
@@ -506,6 +701,8 @@ class SmartCompressor:
         learning_enabled: bool = True,
         max_consecutive_failures: int = 2,
         circuit_breaker_cooldown: int = 20,
+        min_fidelity_score: float = DEFAULT_MIN_FIDELITY_SCORE,
+        protected_min_fidelity_score: float = DEFAULT_PROTECTED_MIN_FIDELITY_SCORE,
     ):
         self.main_model = main_model
         self.level = level
@@ -527,6 +724,8 @@ class SmartCompressor:
         self.max_consecutive_failures = max_consecutive_failures
         self.circuit_breaker_cooldown = circuit_breaker_cooldown
         self.learning_stats: dict[str, CandidateLearningStats] = {}
+        self.min_fidelity_score = min_fidelity_score
+        self.protected_min_fidelity_score = protected_min_fidelity_score
         self._compress_calls = 0
 
         self.is_configured = bool(self.route and api_key and base_url)
@@ -623,6 +822,18 @@ class SmartCompressor:
                     candidate_diagnostics=diagnostics,
                 )
 
+            fidelity = self._score_fidelity(messages, smart_result)
+            if not fidelity.passed:
+                self._record_learning(selected, success=False, reason="fidelity_guard_failed")
+                return rule_result, self._meta(
+                    mode="rule_only_fidelity_guard",
+                    reason="语义保真评分未通过，回退纯规则以避免关键信息丢失",
+                    rule_meta=rule_meta,
+                    projected=projected,
+                    candidate_diagnostics=diagnostics,
+                    fidelity_report=fidelity,
+                )
+
             final_tokens = estimate_tokens_from_messages(smart_result, model=self.main_model)
             actual_profit = estimate_route_profit(
                 self.route,
@@ -667,6 +878,7 @@ class SmartCompressor:
                 projected=projected,
                 actual_profit=actual_profit,
                 candidate_diagnostics=diagnostics,
+                fidelity_report=fidelity,
                 smart_compression={
                     "model": self.compressor_model,
                     "input_tokens": rule_tokens,
@@ -695,6 +907,31 @@ class SmartCompressor:
         if policy.mode == "extreme":
             return CompressionPolicy(policy.mode, self.extreme_target_ratio, policy.reason, policy.risk_score)
         return CompressionPolicy(policy.mode, self.protected_target_ratio, policy.reason, policy.risk_score)
+
+    def _score_fidelity(
+        self,
+        original: list[dict[str, Any]],
+        compressed: list[dict[str, Any]],
+    ) -> FidelityReport:
+        report = score_semantic_fidelity(original, compressed, policy=self.current_policy)
+        hard_signal_count = sum(
+            report.original_signal_count.get(name, 0)
+            for name in ("numbers", "paths", "urls", "code_symbols")
+        )
+        if self.current_policy and self.current_policy.mode == "protected":
+            threshold = self.protected_min_fidelity_score
+        elif hard_signal_count == 0:
+            threshold = min(self.min_fidelity_score, 0.55)
+        else:
+            threshold = self.min_fidelity_score
+        return FidelityReport(
+            score=report.score,
+            passed=report.score >= threshold,
+            threshold=threshold,
+            coverage=report.coverage,
+            missing=report.missing,
+            original_signal_count=report.original_signal_count,
+        )
 
     def _expected_ratio_for(self, option: CheapModelOption | None = None) -> float:
         """Learned expected compression ratio for cost projection.
@@ -829,6 +1066,7 @@ class SmartCompressor:
         actual_profit: dict | None = None,
         candidate_diagnostics: list[dict] | None = None,
         smart_compression: dict | None = None,
+        fidelity_report: FidelityReport | None = None,
     ) -> dict:
         route_info = None
         if self.route:
@@ -859,6 +1097,17 @@ class SmartCompressor:
                     "risk_score": self.current_policy.risk_score,
                 }
                 if self.current_policy else None
+            ),
+            "fidelity_guard": (
+                {
+                    "score": fidelity_report.score,
+                    "passed": fidelity_report.passed,
+                    "threshold": fidelity_report.threshold,
+                    "coverage": fidelity_report.coverage,
+                    "missing": fidelity_report.missing,
+                    "original_signal_count": fidelity_report.original_signal_count,
+                }
+                if fidelity_report else None
             ),
             "profit_guard": {
                 "min_profit_margin_pct": round(self.min_profit_margin * 100, 2),

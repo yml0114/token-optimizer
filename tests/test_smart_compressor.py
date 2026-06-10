@@ -17,6 +17,7 @@ from token_optimizer.core.smart_compressor import (
     assess_compression_policy,
     estimate_tokens_from_text,
     find_cheap_sibling,
+    score_semantic_fidelity,
 )
 
 
@@ -381,3 +382,59 @@ class TestSmartCompressorDualThresholdPolicy:
         assert meta["mode"] == "smart"
         assert meta["compression_policy"]["mode"] in {"safe", "extreme"}
         assert "target_ratio" in meta["compression_policy"]
+
+
+
+class TestSmartCompressorFidelityGuard:
+    """Verify compression cannot drop critical task signals."""
+
+    def _make_configured(self):
+        return SmartCompressor(
+            main_model="mimo-v2.5-pro",
+            api_key="sk-test-key",
+            base_url="https://api.xiaomimimo.com/v1",
+            min_rule_tokens_for_smart=1,
+        )
+
+    def test_fidelity_guard_rejects_missing_numbers_paths_and_url(self):
+        sc = self._make_configured()
+        messages = [{
+            "role": "user",
+            "content": (
+                "请修复 /app/data/project/main.py 的 parse_price()，错误码 500，"
+                "金额必须保持 ¥19.9，接口 https://api.example.com/v1/prices，不要改参数。"
+            ) * 20,
+        }]
+        lossy_output = [{"role": "user", "content": "修复价格解析函数，保持接口参数。"}]
+        with patch.object(sc, '_call_compressor', return_value=lossy_output):
+            result, meta = sc.compress(messages)
+        assert meta["mode"] == "rule_only_fidelity_guard"
+        assert meta["fidelity_guard"]["passed"] is False
+        assert "paths" in meta["fidelity_guard"]["missing"]
+        assert "urls" in meta["fidelity_guard"]["missing"]
+
+    def test_fidelity_guard_allows_preserved_critical_signals(self):
+        sc = self._make_configured()
+        messages = [{
+            "role": "user",
+            "content": (
+                "请修复 /app/data/project/main.py 的 parse_price()，错误码 500，"
+                "金额必须保持 ¥19.9，接口 https://api.example.com/v1/prices，不要改参数。"
+            ) * 20,
+        }]
+        safe_output = [{
+            "role": "user",
+            "content": "修复 /app/data/project/main.py 的 parse_price()；保留错误码 500、金额 ¥19.9、接口 https://api.example.com/v1/prices，参数不改。",
+        }]
+        with patch.object(sc, '_call_compressor', return_value=safe_output):
+            result, meta = sc.compress(messages)
+        assert meta["mode"] == "smart"
+        assert meta["fidelity_guard"]["passed"] is True
+        assert meta["fidelity_guard"]["score"] >= meta["fidelity_guard"]["threshold"]
+
+    def test_score_semantic_fidelity_direct_api(self):
+        original = [{"role": "user", "content": "保留 order_id=12345 和 /tmp/a.json"}]
+        compressed = [{"role": "user", "content": "保留订单和文件"}]
+        report = score_semantic_fidelity(original, compressed)
+        assert report.passed is False
+        assert report.score < report.threshold
