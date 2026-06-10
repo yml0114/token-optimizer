@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from token_optimizer.core.signal_noise import InputCompressor, CompressionLevel
-from token_optimizer.core.smart_compressor import SmartCompressor
+from token_optimizer.core.smart_compressor import DEFAULT_SMART_TARGET_RATIO, SmartCompressor
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -269,11 +269,10 @@ def run_benchmark() -> list[BenchmarkResult]:
         rule_compressed = sum(est_tokens(m.get("content", "")) for m in rule_result)
         rule_savings = rule_meta.get("savings_pct", 0)
 
-        # Flash smart compression (estimate: Flash typically achieves 40-50% on top of rules)
-        # In production, Flash would process the rule-compressed output
-        # Here we estimate based on the compression prompt's target (60-80% reduction)
-        # Flash compression ratio: ~40% of rule-compressed output
-        flash_ratio = 0.40  # Conservative estimate
+        # Flash smart compression estimate follows SmartCompressor's target.
+        # Production still validates actual profit and falls back when the model
+        # cannot safely hit this target.
+        flash_ratio = DEFAULT_SMART_TARGET_RATIO
         flash_compressed = int(rule_compressed * flash_ratio)
         flash_savings = round((1 - flash_compressed / original) * 100, 1)
         flash_compression_ratio = round((1 - flash_compressed / rule_compressed) * 100, 1)

@@ -39,7 +39,7 @@ from token_optimizer.core.signal_noise import (
 
 TOKENS_PER_MILLION = 1_000_000
 DEFAULT_OUTPUT_RATIO = 0.20
-DEFAULT_SMART_TARGET_RATIO = 0.35
+DEFAULT_SMART_TARGET_RATIO = 0.30
 DEFAULT_MIN_PROFIT_MARGIN = 0.05  # require at least 5% cheaper than rule-only
 
 
@@ -378,17 +378,25 @@ def estimate_route_profit(
 
 COMPRESSION_SYSTEM_PROMPT = """你是一个精确的输入压缩器。压缩对话消息列表，最少token保留所有关键信息。
 
+目标：
+- 默认把输入压到规则压缩结果的 30% 左右。
+- 高冗余历史、礼貌语、重复解释、工具噪声可压到 20%-25%。
+- 代码、错误栈、API 参数、文件路径、数字、约束条件不足以安全压缩时，宁可放宽到 40%-50%。
+
 绝对边界：
 1. 你只压缩，不解决用户问题
 2. 不新增事实，不改写任务目标，不改变代码语义
 3. system 消息必须完整保留
-4. 最近 2 轮完整保留，旧轮只保留核心指令、关键结论、重要代码片段
+4. 最近 1 轮用户目标完整保留；旧轮只保留核心指令、关键结论、重要代码片段
 5. 错误信息只保留错误类型、文件、行号、关键堆栈
 6. 工具输出只保留可复现任务所需的关键数据
-7. 如果压缩会导致信息丢失，宁可少压缩
+7. 多轮历史要合并重复意图，保留最终决定，不保留寒暄和过程性解释
+8. 如果压缩会导致信息丢失，宁可少压缩
 
-输入：JSON数组，元素 {"role": "...", "content": "..."}
-输出：仅输出压缩后的JSON数组，不要解释，不要 markdown。"""
+输出要求：
+- 保持 JSON 数组格式，元素 {"role": "...", "content": "..."}
+- 能合并的旧 assistant/user 消息可合并为一条摘要，但必须保留至少一条 user 消息
+- 仅输出压缩后的JSON数组，不要解释，不要 markdown。"""
 
 
 # ══════════════════════════════════════════════════════════════════════════════
