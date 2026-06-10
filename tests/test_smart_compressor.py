@@ -542,3 +542,77 @@ class TestProtectedSpans:
         assert "parse_price()" in user_prompt
         assert "500" in user_prompt
         assert meta["mode"] == "smart"
+
+
+
+class TestSmartCompressorShadowTelemetry:
+    """Verify shadow mode telemetry does not affect real request path."""
+
+    def _make_configured(self, **kwargs):
+        return SmartCompressor(
+            main_model="mimo-v2.5-pro",
+            api_key="sk-test-key",
+            base_url="https://api.xiaomimimo.com/v1",
+            min_rule_tokens_for_smart=1,
+            **kwargs,
+        )
+
+    def test_shadow_does_not_call_cheap_model(self):
+        sc = self._make_configured()
+        messages = [{"role": "user", "content": "请总结这段很长的项目上下文" * 120}]
+        with patch.object(sc, '_call_compressor', side_effect=AssertionError("shadow must not call cheap model")):
+            telemetry = sc.shadow_evaluate(messages)
+        assert telemetry["mode"] == "shadow"
+        assert telemetry["would_call_smart"] is True
+        assert telemetry["selected_candidate"] == "mimo-v2-flash"
+        assert telemetry["estimated_smart_tokens"] is not None
+        assert telemetry["estimated_savings_pct"] > 0
+        assert "does not call cheap models" in telemetry["notes"]
+
+    def test_shadow_short_input_records_profit_guard(self):
+        sc = SmartCompressor(
+            main_model="mimo-v2.5-pro",
+            api_key="sk-test-key",
+            base_url="https://api.xiaomimimo.com/v1",
+        )
+        with patch.object(sc, '_call_compressor', side_effect=AssertionError("shadow must not call cheap model")):
+            telemetry = sc.shadow_evaluate([{"role": "user", "content": "hi"}])
+        assert telemetry["would_call_smart"] is False
+        assert telemetry["would_fallback_reason"] == "short_input_profit_guard"
+        assert telemetry["would_use_rule_only"] is True
+
+    def test_shadow_protected_input_exposes_spans_and_policy(self):
+        sc = self._make_configured()
+        messages = [{
+            "role": "user",
+            "content": "Traceback Error at /app/data/project/main.py def parse_price(): 错误码 500，邮箱 support@unfaze.app，接口 https://api.example.com/v1/prices。" * 20,
+        }]
+        telemetry = sc.shadow_evaluate(messages)
+        assert telemetry["policy_mode"] == "protected"
+        assert telemetry["policy_target_ratio"] == 0.45
+        assert telemetry["protected_span_count"] >= 4
+        assert {"paths", "code_symbols", "numbers", "emails"}.issubset(set(telemetry["protected_span_kinds"]))
+        assert "protected_policy" in telemetry["risk_flags"]
+        assert "protected_spans" in telemetry["risk_flags"]
+
+    def test_shadow_unknown_model_records_missing_route(self):
+        sc = SmartCompressor(
+            main_model="unknown-model",
+            api_key="sk-test-key",
+            base_url="https://api.example.com/v1",
+            min_rule_tokens_for_smart=1,
+        )
+        telemetry = sc.shadow_evaluate([{"role": "user", "content": "请总结这段长内容" * 80}])
+        assert telemetry["would_call_smart"] is False
+        assert telemetry["would_fallback_reason"] == "missing_route_or_api_config"
+        assert telemetry["route"] is None
+
+    def test_shadow_context_guard_records_candidate_diagnostics(self):
+        sc = self._make_configured()
+        tiny_option = replace(sc.route.cheap_options[0], max_context=2)
+        sc.route = replace(sc.route, cheap_options=(tiny_option,))
+        sc.active_option = tiny_option
+        telemetry = sc.shadow_evaluate([{"role": "user", "content": "这是一个明显超过两个token的长输入"}])
+        assert telemetry["would_call_smart"] is False
+        assert telemetry["would_fallback_reason"] == "context_guard"
+        assert telemetry["candidate_diagnostics"][0]["blocked_by_context"] is True

@@ -951,6 +951,209 @@ class SmartCompressor:
                 candidate_diagnostics=diagnostics,
             )
 
+    def shadow_evaluate(
+        self,
+        messages: list[dict[str, Any]],
+        system_text: str = "",
+    ) -> dict:
+        """Dry-run v5 routing without calling the cheap compressor model.
+
+        Shadow mode is meant for production telemetry before rollout: it keeps the
+        real request path unchanged and records what v5 *would* do, including
+        projected savings, policy risk, protected spans, selected candidate, and
+        fallback reason. It must never call ``_call_compressor`` or mutate learning
+        feedback.
+        """
+        try:
+            rule_result, rule_meta = self.rule_compressor.compress_messages(
+                messages, system_text=system_text
+            )
+        except Exception as e:
+            original_tokens = estimate_tokens_from_messages(messages, model=self.main_model)
+            return {
+                "mode": "shadow",
+                "enabled": True,
+                "would_call_smart": False,
+                "would_use_rule_only": False,
+                "would_fallback_reason": "rule_compressor_exception",
+                "reason": f"规则压缩器异常，真实请求应安全旁路且不调用廉价模型: {str(e)[:200]}",
+                "original_tokens": original_tokens,
+                "rule_tokens": original_tokens,
+                "estimated_smart_tokens": None,
+                "estimated_raw_cost": None,
+                "estimated_rule_cost": None,
+                "estimated_smart_cost": None,
+                "estimated_savings_pct": None,
+                "policy_mode": None,
+                "policy_target_ratio": None,
+                "protected_span_count": 0,
+                "protected_span_kinds": [],
+                "route": None,
+                "selected_candidate": None,
+                "candidate_diagnostics": [],
+                "risk_flags": ["safe_passthrough_repair"],
+                "rule_compression": {"error": str(e)[:200]},
+                "notes": "shadow mode does not modify the request and does not call cheap models",
+            }
+
+        policy = self._assess_policy(rule_result)
+        spans = extract_protected_spans(messages)
+        original_tokens = rule_meta.get("original_tokens_est") or estimate_tokens_from_messages(
+            messages, model=self.main_model
+        )
+        rule_tokens = rule_meta.get("compressed_tokens_est") or estimate_tokens_from_messages(
+            rule_result, model=self.main_model
+        )
+        risk_flags: list[str] = []
+        if policy.mode == "protected":
+            risk_flags.append("protected_policy")
+        if spans:
+            risk_flags.append("protected_spans")
+
+        route_info = None
+        if self.route:
+            active = self.active_option or self.route.cheap_options[0]
+            route_info = {
+                "main_model": self.main_model,
+                "compressor": active.model,
+                "candidate_count": len(self.route.cheap_options),
+                "candidates": [option.model for option in self.route.cheap_options],
+                "main_input_price": self.route.main_input_price,
+                "main_output_price": self.route.main_output_price,
+            }
+
+        estimated_raw_cost = None
+        estimated_rule_cost = None
+        if self.route:
+            raw_output_tokens = int(original_tokens * DEFAULT_OUTPUT_RATIO)
+            rule_output_tokens = int(rule_tokens * DEFAULT_OUTPUT_RATIO)
+            estimated_raw_cost = estimate_cost(
+                original_tokens,
+                raw_output_tokens,
+                self.route.main_input_price,
+                self.route.main_output_price,
+            )
+            estimated_rule_cost = estimate_cost(
+                rule_tokens,
+                rule_output_tokens,
+                self.route.main_input_price,
+                self.route.main_output_price,
+            )
+
+        base = {
+            "mode": "shadow",
+            "enabled": True,
+            "original_tokens": original_tokens,
+            "rule_tokens": rule_tokens,
+            "estimated_raw_cost": round(estimated_raw_cost, 8) if estimated_raw_cost is not None else None,
+            "estimated_rule_cost": round(estimated_rule_cost, 8) if estimated_rule_cost is not None else None,
+            "policy_mode": policy.mode,
+            "policy_target_ratio": policy.target_ratio,
+            "policy_reason": policy.reason,
+            "protected_span_count": len(spans),
+            "protected_span_kinds": sorted({span.kind for span in spans}),
+            "protected_spans_sample": [
+                {"kind": span.kind, "value": span.value, "occurrences": span.occurrences}
+                for span in spans[:16]
+            ],
+            "route": route_info,
+            "rule_compression": rule_meta,
+            "risk_flags": risk_flags,
+            "notes": "shadow mode does not modify the request and does not call cheap models",
+        }
+
+        if not self.is_configured or not self.route:
+            return {
+                **base,
+                "would_call_smart": False,
+                "would_use_rule_only": True,
+                "would_fallback_reason": "missing_route_or_api_config",
+                "reason": "无同平台廉价模型可用或缺少API配置；线上应走纯规则路径",
+                "estimated_smart_tokens": None,
+                "estimated_smart_cost": None,
+                "estimated_savings_pct": None,
+                "selected_candidate": None,
+                "candidate_diagnostics": [],
+            }
+
+        if rule_tokens < self.min_rule_tokens_for_smart:
+            projection = self._project_profit(rule_tokens)
+            return {
+                **base,
+                "would_call_smart": False,
+                "would_use_rule_only": True,
+                "would_fallback_reason": "short_input_profit_guard",
+                "reason": "规则压缩后输入过短，调用廉价模型的固定成本不划算",
+                "estimated_smart_tokens": None,
+                "estimated_smart_cost": projection.get("smart_total_cost"),
+                "estimated_savings_pct": projection.get("savings_pct"),
+                "selected_candidate": projection.get("candidate"),
+                "candidate_diagnostics": [projection],
+            }
+
+        try:
+            selected, projected, diagnostics = self._select_best_option(rule_tokens)
+        except Exception as e:
+            return {
+                **base,
+                "would_call_smart": False,
+                "would_use_rule_only": True,
+                "would_fallback_reason": "router_exception",
+                "reason": f"候选路由器异常；线上应回退纯规则: {str(e)[:200]}",
+                "estimated_smart_tokens": None,
+                "estimated_smart_cost": None,
+                "estimated_savings_pct": None,
+                "selected_candidate": None,
+                "candidate_diagnostics": [],
+            }
+
+        if selected is None or projected is None:
+            all_context_blocked = bool(diagnostics) and all(
+                item.get("blocked_by_context") for item in diagnostics
+            )
+            all_circuit_blocked = bool(diagnostics) and all(
+                item.get("blocked_by_circuit") for item in diagnostics
+            )
+            fallback_reason = (
+                "context_guard" if all_context_blocked
+                else "circuit_breaker" if all_circuit_blocked
+                else "profit_guard"
+            )
+            return {
+                **base,
+                "would_call_smart": False,
+                "would_use_rule_only": True,
+                "would_fallback_reason": fallback_reason,
+                "reason": "shadow 预测不应调用廉价模型；线上应走纯规则路径",
+                "estimated_smart_tokens": None,
+                "estimated_smart_cost": None,
+                "estimated_savings_pct": None,
+                "selected_candidate": None,
+                "candidate_diagnostics": diagnostics,
+            }
+
+        expected_ratio = self._expected_ratio_for(selected)
+        estimated_smart_tokens = max(1, int(rule_tokens * expected_ratio))
+        raw_to_smart_savings_pct = None
+        if estimated_raw_cost and projected.get("smart_total_cost") is not None:
+            raw_to_smart_savings_pct = (
+                (estimated_raw_cost - float(projected["smart_total_cost"])) / estimated_raw_cost * 100
+                if estimated_raw_cost > 0 else 0.0
+            )
+        return {
+            **base,
+            "would_call_smart": True,
+            "would_use_rule_only": False,
+            "would_fallback_reason": None,
+            "reason": "shadow 预测 v5 smart compression 可启用；真实请求仍保持原路径不变",
+            "estimated_smart_tokens": estimated_smart_tokens,
+            "estimated_smart_cost": projected.get("smart_total_cost"),
+            "estimated_savings_pct": projected.get("savings_pct"),
+            "estimated_raw_to_smart_savings_pct": round(raw_to_smart_savings_pct, 2) if raw_to_smart_savings_pct is not None else None,
+            "selected_candidate": selected.model,
+            "candidate_diagnostics": diagnostics,
+        }
+
     def _assess_policy(self, messages: list[dict[str, Any]]) -> CompressionPolicy:
         policy = assess_compression_policy(messages)
         if policy.mode == "safe":

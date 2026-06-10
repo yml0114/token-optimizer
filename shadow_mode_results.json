@@ -1,0 +1,287 @@
+{
+  "summary": {
+    "scenario_count": 11,
+    "would_call_smart_count": 11,
+    "would_call_smart_rate": 1.0,
+    "original_tokens": 2015,
+    "rule_tokens": 1392,
+    "estimated_smart_tokens": 412,
+    "rule_to_smart_token_saved_pct": 70.4,
+    "estimated_rule_cost": 0.002217,
+    "estimated_smart_cost": 0.0009118,
+    "estimated_incremental_cost_saved_pct": 58.87,
+    "policy_distribution": {
+      "protected": 8,
+      "extreme": 3
+    },
+    "fallback_distribution": {},
+    "protected_span_kind_distribution": {
+      "code_symbols": 10,
+      "numbers": 7,
+      "paths": 3,
+      "urls": 1
+    }
+  },
+  "rows": [
+    {
+      "scenario": "Coding conversation",
+      "would_call_smart": true,
+      "would_fallback_reason": null,
+      "original_tokens": 311,
+      "rule_tokens": 205,
+      "estimated_smart_tokens": 61,
+      "estimated_rule_cost": 0.000328,
+      "estimated_smart_cost": 0.0001358,
+      "estimated_savings_pct": 58.6,
+      "estimated_raw_to_smart_savings_pct": 72.68,
+      "policy_mode": "protected",
+      "policy_target_ratio": 0.45,
+      "protected_span_count": 11,
+      "protected_span_kinds": [
+        "code_symbols",
+        "numbers"
+      ],
+      "selected_candidate": "mimo-v2-flash",
+      "risk_flags": [
+        "protected_policy",
+        "protected_spans"
+      ]
+    },
+    {
+      "scenario": "Tool output",
+      "would_call_smart": true,
+      "would_fallback_reason": null,
+      "original_tokens": 76,
+      "rule_tokens": 71,
+      "estimated_smart_tokens": 21,
+      "estimated_rule_cost": 0.000113,
+      "estimated_smart_cost": 4.64e-05,
+      "estimated_savings_pct": 58.94,
+      "estimated_raw_to_smart_savings_pct": 61.65,
+      "policy_mode": "extreme",
+      "policy_target_ratio": 0.22,
+      "protected_span_count": 7,
+      "protected_span_kinds": [
+        "code_symbols",
+        "numbers"
+      ],
+      "selected_candidate": "mimo-v2-flash",
+      "risk_flags": [
+        "protected_spans"
+      ]
+    },
+    {
+      "scenario": "Error debugging",
+      "would_call_smart": true,
+      "would_fallback_reason": null,
+      "original_tokens": 187,
+      "rule_tokens": 117,
+      "estimated_smart_tokens": 35,
+      "estimated_rule_cost": 0.000186,
+      "estimated_smart_cost": 7.82e-05,
+      "estimated_savings_pct": 57.96,
+      "estimated_raw_to_smart_savings_pct": 73.76,
+      "policy_mode": "protected",
+      "policy_target_ratio": 0.45,
+      "protected_span_count": 10,
+      "protected_span_kinds": [
+        "code_symbols",
+        "numbers",
+        "paths"
+      ],
+      "selected_candidate": "mimo-v2-flash",
+      "risk_flags": [
+        "protected_policy",
+        "protected_spans"
+      ]
+    },
+    {
+      "scenario": "Long multi-turn",
+      "would_call_smart": true,
+      "would_fallback_reason": null,
+      "original_tokens": 413,
+      "rule_tokens": 231,
+      "estimated_smart_tokens": 69,
+      "estimated_rule_cost": 0.000369,
+      "estimated_smart_cost": 0.0001518,
+      "estimated_savings_pct": 58.86,
+      "estimated_raw_to_smart_savings_pct": 76.97,
+      "policy_mode": "protected",
+      "policy_target_ratio": 0.45,
+      "protected_span_count": 11,
+      "protected_span_kinds": [
+        "code_symbols",
+        "paths"
+      ],
+      "selected_candidate": "mimo-v2-flash",
+      "risk_flags": [
+        "protected_policy",
+        "protected_spans"
+      ]
+    },
+    {
+      "scenario": "English API",
+      "would_call_smart": true,
+      "would_fallback_reason": null,
+      "original_tokens": 255,
+      "rule_tokens": 255,
+      "estimated_smart_tokens": 76,
+      "estimated_rule_cost": 0.000408,
+      "estimated_smart_cost": 0.0001693,
+      "estimated_savings_pct": 58.5,
+      "estimated_raw_to_smart_savings_pct": 58.5,
+      "policy_mode": "protected",
+      "policy_target_ratio": 0.45,
+      "protected_span_count": 25,
+      "protected_span_kinds": [
+        "code_symbols",
+        "numbers",
+        "paths",
+        "urls"
+      ],
+      "selected_candidate": "mimo-v2-flash",
+      "risk_flags": [
+        "protected_policy",
+        "protected_spans"
+      ]
+    },
+    {
+      "scenario": "v3 heavy filler",
+      "would_call_smart": true,
+      "would_fallback_reason": null,
+      "original_tokens": 60,
+      "rule_tokens": 53,
+      "estimated_smart_tokens": 15,
+      "estimated_rule_cost": 8.3e-05,
+      "estimated_smart_cost": 3.38e-05,
+      "estimated_savings_pct": 59.28,
+      "estimated_raw_to_smart_savings_pct": 64.79,
+      "policy_mode": "protected",
+      "policy_target_ratio": 0.45,
+      "protected_span_count": 3,
+      "protected_span_kinds": [
+        "code_symbols"
+      ],
+      "selected_candidate": "mimo-v2-flash",
+      "risk_flags": [
+        "protected_policy",
+        "protected_spans"
+      ]
+    },
+    {
+      "scenario": "v3 politeness",
+      "would_call_smart": true,
+      "would_fallback_reason": null,
+      "original_tokens": 68,
+      "rule_tokens": 29,
+      "estimated_smart_tokens": 8,
+      "estimated_rule_cost": 4.4e-05,
+      "estimated_smart_cost": 1.63e-05,
+      "estimated_savings_pct": 62.95,
+      "estimated_raw_to_smart_savings_pct": 84.77,
+      "policy_mode": "protected",
+      "policy_target_ratio": 0.45,
+      "protected_span_count": 1,
+      "protected_span_kinds": [
+        "code_symbols"
+      ],
+      "selected_candidate": "mimo-v2-flash",
+      "risk_flags": [
+        "protected_policy",
+        "protected_spans"
+      ]
+    },
+    {
+      "scenario": "v4 long coding",
+      "would_call_smart": true,
+      "would_fallback_reason": null,
+      "original_tokens": 441,
+      "rule_tokens": 278,
+      "estimated_smart_tokens": 83,
+      "estimated_rule_cost": 0.000443,
+      "estimated_smart_cost": 0.0001837,
+      "estimated_savings_pct": 58.53,
+      "estimated_raw_to_smart_savings_pct": 73.94,
+      "policy_mode": "protected",
+      "policy_target_ratio": 0.45,
+      "protected_span_count": 18,
+      "protected_span_kinds": [
+        "code_symbols"
+      ],
+      "selected_candidate": "mimo-v2-flash",
+      "risk_flags": [
+        "protected_policy",
+        "protected_spans"
+      ]
+    },
+    {
+      "scenario": "v4 repeated dedup",
+      "would_call_smart": true,
+      "would_fallback_reason": null,
+      "original_tokens": 39,
+      "rule_tokens": 35,
+      "estimated_smart_tokens": 10,
+      "estimated_rule_cost": 5.6e-05,
+      "estimated_smart_cost": 2.25e-05,
+      "estimated_savings_pct": 59.82,
+      "estimated_raw_to_smart_savings_pct": 62.5,
+      "policy_mode": "extreme",
+      "policy_target_ratio": 0.22,
+      "protected_span_count": 4,
+      "protected_span_kinds": [
+        "code_symbols",
+        "numbers"
+      ],
+      "selected_candidate": "mimo-v2-flash",
+      "risk_flags": [
+        "protected_spans"
+      ]
+    },
+    {
+      "scenario": "v4 word-level",
+      "would_call_smart": true,
+      "would_fallback_reason": null,
+      "original_tokens": 117,
+      "rule_tokens": 75,
+      "estimated_smart_tokens": 22,
+      "estimated_rule_cost": 0.00012,
+      "estimated_smart_cost": 4.81e-05,
+      "estimated_savings_pct": 59.92,
+      "estimated_raw_to_smart_savings_pct": 74.14,
+      "policy_mode": "protected",
+      "policy_target_ratio": 0.45,
+      "protected_span_count": 11,
+      "protected_span_kinds": [
+        "code_symbols",
+        "numbers"
+      ],
+      "selected_candidate": "mimo-v2-flash",
+      "risk_flags": [
+        "protected_policy",
+        "protected_spans"
+      ]
+    },
+    {
+      "scenario": "v4 repeated dedup v2",
+      "would_call_smart": true,
+      "would_fallback_reason": null,
+      "original_tokens": 48,
+      "rule_tokens": 43,
+      "estimated_smart_tokens": 12,
+      "estimated_rule_cost": 6.7e-05,
+      "estimated_smart_cost": 2.59e-05,
+      "estimated_savings_pct": 61.34,
+      "estimated_raw_to_smart_savings_pct": 65.47,
+      "policy_mode": "extreme",
+      "policy_target_ratio": 0.22,
+      "protected_span_count": 2,
+      "protected_span_kinds": [
+        "numbers"
+      ],
+      "selected_candidate": "mimo-v2-flash",
+      "risk_flags": [
+        "protected_spans"
+      ]
+    }
+  ]
+}
