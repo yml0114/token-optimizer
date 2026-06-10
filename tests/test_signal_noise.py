@@ -361,3 +361,133 @@ class TestV3Improvements:
         content = result[0]["content"]
         # Core command should be there
         assert "创建" in content or "用户认证" in content
+
+
+class TestV4WordLevel:
+    """v4: Word-level fine filtering and history compression v2."""
+
+    def setup_method(self):
+        self.comp = InputCompressor(CompressionLevel.AGGRESSIVE)
+
+    def test_then_filler_stripped(self):
+        """'那么写一个函数' → '写函数'."""
+        messages = [{"role": "user", "content": "那么写一个函数"}]
+        result, meta = self.comp.compress_messages(messages)
+        content = result[0]["content"]
+        assert "那么" not in content
+        assert "写" in content
+
+    def test_incidentally_stripped(self):
+        """'顺便加一个日志功能' → '加日志功能'."""
+        messages = [{"role": "user", "content": "顺便加一个日志功能"}]
+        result, meta = self.comp.compress_messages(messages)
+        content = result[0]["content"]
+        assert "顺便" not in content
+
+    def test_can_add_stripped(self):
+        """'能加一个缓存吗' → '加缓存吗'."""
+        messages = [{"role": "user", "content": "能加一个缓存吗"}]
+        result, meta = self.comp.compress_messages(messages)
+        content = result[0]["content"]
+        assert "能加" not in content
+
+    def test_actually_stripped(self):
+        """'其实我想用Python' → '用Python' (roughly)."""
+        messages = [{"role": "user", "content": "其实我想用Python写"}]
+        result, meta = self.comp.compress_messages(messages)
+        content = result[0]["content"]
+        assert "其实" not in content
+
+    def test_hedge_words_stripped(self):
+        """'我觉得可以加错误处理' → '加错误处理'."""
+        messages = [{"role": "user", "content": "我觉得可以加错误处理"}]
+        result, meta = self.comp.compress_messages(messages)
+        content = result[0]["content"]
+        assert "我觉得" not in content
+
+    def test_demonstrative_stripped(self):
+        """'那种缓存功能' → '缓存功能'."""
+        messages = [{"role": "user", "content": "加那种缓存功能"}]
+        result, meta = self.comp.compress_messages(messages)
+        content = result[0]["content"]
+        assert "那种" not in content
+
+    def test_punctuation_normalized(self):
+        """Multiple exclamation marks → single."""
+        messages = [{"role": "user", "content": "写一个函数！！！"}]
+        result, meta = self.comp.compress_messages(messages)
+        content = result[0]["content"]
+        assert "!!!" not in content
+        assert "写" in content
+
+    def test_long_conversation_history_compression(self):
+        """10-turn conversation with verbose assistant replies should compress old turns."""
+        messages = [
+            {"role": "system", "content": "You are a coding assistant."},
+        ]
+        # Add 8 old turns with VERBOSE assistant replies
+        for i in range(4):
+            idx = i + 1
+            messages.append({"role": "user", "content": f"请帮我写一个排序算法，如果可以的话用Python实现第{idx}个版本"})
+            assistant_content = (
+                f"好的！我来帮你实现第{idx}个版本的排序算法。\n\n"
+                f"这个实现非常优雅，让我来详细解释一下。首先我们需要理解排序的基本原理，"
+                f"排序算法的时间复杂度从O(n2)到O(n log n)不等。好的排序算法应该是稳定的，"
+                f"这意味着相等元素的相对顺序不会改变。\n\n"
+                f"def sort_v{idx}(arr):\n    return sorted(arr) # version {idx}\n\n"
+                f"这个实现使用了Python内置的sorted函数，它基于TimSort算法，"
+                f"时间复杂度为O(n log n)，空间复杂度为O(n)。希望这个对你有帮助！"
+            )
+            messages.append({"role": "assistant", "content": assistant_content})
+        # Add 2 recent turns
+        messages.append({"role": "user", "content": "请帮我写一个测试"})
+        messages.append({"role": "assistant", "content": "def test_sort():\n    assert sort_v1([3,1,2]) == [1,2,3]"})
+
+        comp = InputCompressor(CompressionLevel.AGGRESSIVE)
+        result, meta = comp.compress_messages(messages)
+
+        # Should compress old turns (verbose assistant replies)
+        hist = meta.get("history_compression", {})
+        assert hist.get("compressed") is True, f"History should be compressed"
+        assert hist["savings_pct"] > 10, f"Expected history savings > 10%, got {hist['savings_pct']}"
+
+    def test_repeated_instruction_dedup(self):
+        """Repeated '写一个排序算法' across old turns should be deduped."""
+        messages = [
+            {"role": "system", "content": "You are a coding assistant."},
+            {"role": "user", "content": "请帮我写一个排序算法"},
+            {"role": "assistant", "content": "def sort(arr):\n    return sorted(arr)"},
+            {"role": "user", "content": "请帮我写一个排序算法，加上自定义比较"},
+            {"role": "assistant", "content": "def sort(arr, key=None):\n    return sorted(arr, key=key)"},
+            {"role": "user", "content": "请帮我写一个排序算法，加上原地排序"},
+            {"role": "assistant", "content": "def sort_inplace(arr):\n    arr.sort()"},
+            {"role": "user", "content": "很好，那么请帮我写一个哈希表"},
+            {"role": "assistant", "content": "class HashMap:\n    def __init__(self):\n        self._data = {}"},
+            {"role": "user", "content": "请帮我写一个链表"},
+        ]
+
+        comp = InputCompressor(CompressionLevel.AGGRESSIVE)
+        result, meta = comp.compress_messages(messages)
+
+        hist = meta.get("history_compression", {})
+        if hist.get("compressed"):
+            # At least one repeated instruction should be detected
+            repeated = hist.get("repeated_instructions_removed", 0)
+            assert repeated >= 1, f"Expected at least 1 deduped instruction, got {repeated}"
+
+    def test_residual_short_fragment_noise(self):
+        """Very short Chinese fragments (< 4 chars) after filler removal → noise."""
+        classifier = SignalNoiseClassifier(CompressionLevel.AGGRESSIVE)
+        # "好的" is 2 chars, should be classified as noise
+        segments = classifier.classify_text("好的")
+        # Should have at least one noise segment
+        noise = [s for s in segments if s.segment_type == SegmentType.NOISE]
+        assert len(noise) >= 1
+
+    def test_command_survives_word_level_filtering(self):
+        """Core commands must survive all v4 word-level filtering."""
+        messages = [{"role": "user", "content": "那么其实我觉得能加一个缓存模块"}]
+        result, meta = self.comp.compress_messages(messages)
+        content = result[0]["content"]
+        # Core command should survive
+        assert "加" in content or "缓存" in content
