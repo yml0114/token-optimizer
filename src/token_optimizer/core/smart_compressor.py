@@ -475,6 +475,7 @@ _SIGNAL_PATTERNS: dict[str, str] = {
     "numbers": r"(?<![\w.])(?:\d+(?:\.\d+)?%?|[$¥]\s*\d+(?:\.\d+)?|\d+(?:\.\d+)?\s*(?:ms|s|kg|mb|gb|k|m|万|亿))(?![\w.])",
     "paths": r"(?:/[\w.\-\u4e00-\u9fff]+){2,}|[A-Za-z]:\\(?:[^\\\s]+\\?)+|[\w.\-]+\.(?:py|js|ts|tsx|jsx|json|md|yaml|yml|txt|csv|xlsx|pdf)",
     "urls": r"https?://[^\s)\]}>\"，。；：、]+",
+    "emails": r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
     "code_symbols": r"\b(?:def|class|import|from|return|async|await|function|const|let|var|SELECT|INSERT|UPDATE|DELETE)\b|[A-Za-z_][A-Za-z0-9_]{2,}\(",
     "constraints": r"(?:必须|不能|不要|禁止|一定|只允许|至少|最多|保留|完整|优先|不得|must|never|only|required|forbidden)",
 }
@@ -483,6 +484,7 @@ _SIGNAL_WEIGHTS: dict[str, float] = {
     "numbers": 0.20,
     "paths": 0.20,
     "urls": 0.12,
+    "emails": 0.12,
     "code_symbols": 0.20,
     "constraints": 0.18,
     "latest_user_keywords": 0.10,
@@ -625,7 +627,7 @@ def score_semantic_fidelity(
     score = weighted_score / active_weight if active_weight > 0 else 1.0
     hard_signal_count = sum(
         len(original_signals.get(name, []))
-        for name in ("numbers", "paths", "urls", "code_symbols")
+        for name in ("numbers", "paths", "urls", "emails", "code_symbols")
     )
     if policy and policy.mode == "protected":
         threshold = DEFAULT_PROTECTED_MIN_FIDELITY_SCORE
@@ -916,7 +918,7 @@ class SmartCompressor:
         report = score_semantic_fidelity(original, compressed, policy=self.current_policy)
         hard_signal_count = sum(
             report.original_signal_count.get(name, 0)
-            for name in ("numbers", "paths", "urls", "code_symbols")
+            for name in ("numbers", "paths", "urls", "emails", "code_symbols")
         )
         if self.current_policy and self.current_policy.mode == "protected":
             threshold = self.protected_min_fidelity_score

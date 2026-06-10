@@ -1,0 +1,64 @@
+L1 v5 Fidelity Regression Benchmark
+========================================================================================================
+code_path_number_url         code         original=524   safe=35   safe_ok=True  lossy_rejected=True  safe_score=1.0 lossy_score=0.0407
+json_api_params              api          original=432   safe=22   safe_ok=True  lossy_rejected=True  safe_score=1.0 lossy_score=0.0667
+python_traceback             logs         original=466   safe=27   safe_ok=True  lossy_rejected=True  safe_score=1.0 lossy_score=0.0
+sql_migration                database     original=489   safe=28   safe_ok=True  lossy_rejected=True  safe_score=1.0 lossy_score=0.0667
+cli_command                  cli          original=451   safe=27   safe_ok=True  lossy_rejected=True  safe_score=1.0 lossy_score=0.0667
+financial_numbers            finance      original=324   safe=23   safe_ok=True  lossy_rejected=True  safe_score=1.0 lossy_score=0.3333
+legal_clause                 legal        original=374   safe=26   safe_ok=True  lossy_rejected=True  safe_score=1.0 lossy_score=0.2222
+medical_dosage               medical      original=404   safe=21   safe_ok=True  lossy_rejected=True  safe_score=1.0 lossy_score=0.1111
+multilingual_mixed           multilingual original=443   safe=23   safe_ok=True  lossy_rejected=True  safe_score=1.0 lossy_score=0.0
+env_vars                     config       original=392   safe=25   safe_ok=True  lossy_rejected=True  safe_score=1.0 lossy_score=0.1613
+file_paths                   path         original=442   safe=26   safe_ok=True  lossy_rejected=True  safe_score=1.0 lossy_score=0.1111
+http_statuses                api          original=356   safe=23   safe_ok=True  lossy_rejected=True  safe_score=1.0 lossy_score=0.0667
+typescript_symbol            code         original=369   safe=21   safe_ok=True  lossy_rejected=True  safe_score=1.0 lossy_score=0.0667
+regex_pattern                regex        original=311   safe=19   safe_ok=True  lossy_rejected=True  safe_score=1.0 lossy_score=0.3333
+docker_port                  ops          original=350   safe=18   safe_ok=True  lossy_rejected=True  safe_score=0.8889 lossy_score=0.3333
+uuid_and_hash                tracking     original=439   safe=29   safe_ok=True  lossy_rejected=True  safe_score=1.0 lossy_score=0.1111
+pricing_table                pricing      original=421   safe=23   safe_ok=True  lossy_rejected=True  safe_score=0.8889 lossy_score=0.1111
+benchmark_metrics            benchmark    original=430   safe=21   safe_ok=True  lossy_rejected=True  safe_score=1.0 lossy_score=0.1111
+json_nested                  json         original=518   safe=26   safe_ok=True  lossy_rejected=True  safe_score=1.0 lossy_score=0.0
+csv_columns                  tabular      original=350   safe=22   safe_ok=True  lossy_rejected=True  safe_score=1.0 lossy_score=0.0
+markdown_link                markdown     original=537   safe=28   safe_ok=True  lossy_rejected=True  safe_score=1.0 lossy_score=0.3333
+model_route                  routing      original=375   safe=25   safe_ok=True  lossy_rejected=True  safe_score=1.0 lossy_score=0.3333
+permission_boundary          safety       original=464   safe=28   safe_ok=True  lossy_rejected=True  safe_score=1.0 lossy_score=0.1111
+calendar_time                calendar     original=357   safe=22   safe_ok=True  lossy_rejected=True  safe_score=1.0 lossy_score=0.1111
+shell_error                  shell        original=531   safe=25   safe_ok=True  lossy_rejected=True  safe_score=1.0 lossy_score=0.0476
+unicode_cjk                  unicode      original=410   safe=23   safe_ok=True  lossy_rejected=True  safe_score=1.0 lossy_score=0.0
+product_requirement          prd          original=390   safe=18   safe_ok=True  lossy_rejected=True  safe_score=1.0 lossy_score=0.0
+cache_policy                 cache        original=400   safe=24   safe_ok=True  lossy_rejected=True  safe_score=1.0 lossy_score=0.1111
+rate_limit_policy            reliability  original=413   safe=26   safe_ok=True  lossy_rejected=True  safe_score=1.0 lossy_score=0.3333
+email_address                email        original=379   safe=19   safe_ok=True  lossy_rejected=True  safe_score=1.0 lossy_score=0.4545
+--------------------------------------------------------------------------------------------------------
+Safe pass rate:      30/30
+Lossy reject rate:   30/30
+Category coverage:
+  - api          safe=2/2 lossy=2/2
+  - benchmark    safe=1/1 lossy=1/1
+  - cache        safe=1/1 lossy=1/1
+  - calendar     safe=1/1 lossy=1/1
+  - cli          safe=1/1 lossy=1/1
+  - code         safe=2/2 lossy=2/2
+  - config       safe=1/1 lossy=1/1
+  - database     safe=1/1 lossy=1/1
+  - email        safe=1/1 lossy=1/1
+  - finance      safe=1/1 lossy=1/1
+  - json         safe=1/1 lossy=1/1
+  - legal        safe=1/1 lossy=1/1
+  - logs         safe=1/1 lossy=1/1
+  - markdown     safe=1/1 lossy=1/1
+  - medical      safe=1/1 lossy=1/1
+  - multilingual safe=1/1 lossy=1/1
+  - ops          safe=1/1 lossy=1/1
+  - path         safe=1/1 lossy=1/1
+  - prd          safe=1/1 lossy=1/1
+  - pricing      safe=1/1 lossy=1/1
+  - regex        safe=1/1 lossy=1/1
+  - reliability  safe=1/1 lossy=1/1
+  - routing      safe=1/1 lossy=1/1
+  - safety       safe=1/1 lossy=1/1
+  - shell        safe=1/1 lossy=1/1
+  - tabular      safe=1/1 lossy=1/1
+  - tracking     safe=1/1 lossy=1/1
+  - unicode      safe=1/1 lossy=1/1
