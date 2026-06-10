@@ -16,7 +16,9 @@ from token_optimizer.core.smart_compressor import (
     SmartCompressor,
     assess_compression_policy,
     estimate_tokens_from_text,
+    extract_protected_spans,
     find_cheap_sibling,
+    format_protected_spans,
     score_semantic_fidelity,
 )
 
@@ -438,3 +440,105 @@ class TestSmartCompressorFidelityGuard:
         report = score_semantic_fidelity(original, compressed)
         assert report.passed is False
         assert report.score < report.threshold
+
+
+class TestProtectedSpans:
+    """Verify deterministic protected-span extraction for smart compression."""
+
+    def test_extract_protected_spans_covers_hard_signals(self):
+        messages = [{
+            "role": "user",
+            "content": (
+                "修复 /app/data/project/main.py 的 parse_price()，错误码 500，"
+                "接口 https://api.example.com/v1/prices，邮箱 support@unfaze.app。"
+            ),
+        }]
+        spans = extract_protected_spans(messages)
+        values = {span.value for span in spans}
+        kinds = {span.kind for span in spans}
+        assert "/app/data/project/main.py" in values
+        assert "https://api.example.com/v1/prices" in values
+        assert "support@unfaze.app" in values
+        assert "parse_price()" in values
+        assert "500" in values
+        assert {"paths", "urls", "emails", "code_symbols", "numbers"}.issubset(kinds)
+
+    def test_format_protected_spans_for_prompt(self):
+        spans = extract_protected_spans([{
+            "role": "user",
+            "content": "保留 /tmp/a.json 和 request_id=req_123，金额 ¥19.9。",
+        }])
+        text = format_protected_spans(spans)
+        assert "PROTECTED_SPANS" in text
+        assert "/tmp/a.json" in text
+        assert "¥19.9" in text
+
+    def test_metadata_exposes_protected_spans(self):
+        sc = SmartCompressor(
+            main_model="mimo-v2.5-pro",
+            api_key="sk-test-key",
+            base_url="https://api.xiaomimimo.com/v1",
+            min_rule_tokens_for_smart=1,
+        )
+        messages = [{
+            "role": "user",
+            "content": "修复 /app/data/project/main.py 的 parse_price()，错误码 500。" * 20,
+        }]
+        safe_output = [{"role": "user", "content": "修复 /app/data/project/main.py 的 parse_price()，保留错误码 500。"}]
+        with patch.object(sc, '_call_compressor', return_value=safe_output):
+            _result, meta = sc.compress(messages)
+        assert meta["protected_spans"]["count"] >= 3
+        protected_values = {item["value"] for item in meta["protected_spans"]["items"]}
+        assert "/app/data/project/main.py" in protected_values
+        assert "parse_price()" in protected_values
+        assert "500" in protected_values
+
+    def test_call_payload_includes_protected_spans(self):
+        sc = SmartCompressor(
+            main_model="mimo-v2.5-pro",
+            api_key="sk-test-key",
+            base_url="https://api.xiaomimimo.com/v1",
+            min_rule_tokens_for_smart=1,
+        )
+        messages = [{
+            "role": "user",
+            "content": "修复 /app/data/project/main.py 的 parse_price()，错误码 500。" * 20,
+        }]
+        captured = {}
+
+        class FakeResponse:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {
+                    "choices": [{
+                        "message": {
+                            "content": json.dumps([{"role": "user", "content": "修复 /app/data/project/main.py 的 parse_price()，保留错误码 500。"}], ensure_ascii=False),
+                        },
+                    }],
+                }
+
+        class FakeClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def post(self, url, json=None, headers=None):
+                captured["payload"] = json
+                return FakeResponse()
+
+        with patch("token_optimizer.core.smart_compressor.httpx.Client", FakeClient):
+            _result, meta = sc.compress(messages)
+
+        user_prompt = captured["payload"]["messages"][1]["content"]
+        assert "PROTECTED_SPANS" in user_prompt
+        assert "/app/data/project/main.py" in user_prompt
+        assert "parse_price()" in user_prompt
+        assert "500" in user_prompt
+        assert meta["mode"] == "smart"

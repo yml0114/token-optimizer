@@ -154,6 +154,15 @@ class FidelityReport:
     original_signal_count: dict[str, int]
 
 
+@dataclass(frozen=True)
+class ProtectedSpan:
+    """A concrete text span that must survive smart compression."""
+
+    kind: str
+    value: str
+    occurrences: int = 1
+
+
 HIGH_RISK_KEYWORDS = (
     "```", "traceback", "exception", "error", "api_key", "token", "password",
     "http://", "https://", "file:", "/app/", "/users/", "def ", "class ",
@@ -476,7 +485,7 @@ _SIGNAL_PATTERNS: dict[str, str] = {
     "paths": r"(?:/[\w.\-\u4e00-\u9fff]+){2,}|[A-Za-z]:\\(?:[^\\\s]+\\?)+|[\w.\-]+\.(?:py|js|ts|tsx|jsx|json|md|yaml|yml|txt|csv|xlsx|pdf)",
     "urls": r"https?://[^\s)\]}>\"，。；：、]+",
     "emails": r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
-    "code_symbols": r"\b(?:def|class|import|from|return|async|await|function|const|let|var|SELECT|INSERT|UPDATE|DELETE)\b|[A-Za-z_][A-Za-z0-9_]{2,}\(",
+    "code_symbols": r"\b(?:def|class|import|from|return|async|await|function|const|let|var|SELECT|INSERT|UPDATE|DELETE)\b|[A-Za-z_][A-Za-z0-9_]{2,}\(\)?",
     "constraints": r"(?:必须|不能|不要|禁止|一定|只允许|至少|最多|保留|完整|优先|不得|must|never|only|required|forbidden)",
 }
 
@@ -584,6 +593,44 @@ def extract_critical_signals(messages: list[dict[str, Any]]) -> dict[str, list[s
     ]
     signals["latest_user_keywords"] = _latest_user_keywords(messages)
     return signals
+
+
+def extract_protected_spans(messages: list[dict[str, Any]], limit: int = 64) -> list[ProtectedSpan]:
+    """Return concrete spans that a model compressor must preserve verbatim.
+
+    These spans are deterministic and zero-cost. They are stronger than generic
+    keywords: numbers, paths, URLs, emails, code symbols, and non-generic hard
+    constraints should be copied into the compressed prompt whenever present.
+    """
+    signals = extract_critical_signals(messages)
+    ordered_kinds = ("urls", "emails", "paths", "code_symbols", "numbers", "constraints")
+    spans: list[ProtectedSpan] = []
+    seen: set[tuple[str, str]] = set()
+    full_text = _messages_text(messages).lower()
+    for kind in ordered_kinds:
+        for value in signals.get(kind, []):
+            normalized = value.strip()
+            if not normalized:
+                continue
+            key = (kind, normalized.lower())
+            if key in seen:
+                continue
+            seen.add(key)
+            occurrences = max(1, full_text.count(normalized.lower()))
+            spans.append(ProtectedSpan(kind=kind, value=normalized, occurrences=occurrences))
+            if len(spans) >= limit:
+                return spans
+    return spans
+
+
+def format_protected_spans(spans: list[ProtectedSpan], limit: int = 64) -> str:
+    """Format protected spans for the cheap model prompt."""
+    if not spans:
+        return ""
+    lines = ["PROTECTED_SPANS: 以下字段必须原样保留，不能改写、合并、删除："]
+    for span in spans[:limit]:
+        lines.append(f"- [{span.kind}] {span.value}")
+    return "\n".join(lines)
 
 
 def score_semantic_fidelity(
@@ -728,6 +775,7 @@ class SmartCompressor:
         self.learning_stats: dict[str, CandidateLearningStats] = {}
         self.min_fidelity_score = min_fidelity_score
         self.protected_min_fidelity_score = protected_min_fidelity_score
+        self.current_protected_spans: list[ProtectedSpan] = []
         self._compress_calls = 0
 
         self.is_configured = bool(self.route and api_key and base_url)
@@ -753,6 +801,7 @@ class SmartCompressor:
             )
 
         self.current_policy = self._assess_policy(rule_result)
+        self.current_protected_spans = extract_protected_spans(messages)
 
         if not self.is_configured or not self.route:
             return rule_result, self._meta(
@@ -1100,6 +1149,13 @@ class SmartCompressor:
                 }
                 if self.current_policy else None
             ),
+            "protected_spans": {
+                "count": len(self.current_protected_spans),
+                "items": [
+                    {"kind": span.kind, "value": span.value, "occurrences": span.occurrences}
+                    for span in self.current_protected_spans[:32]
+                ],
+            },
             "fidelity_guard": (
                 {
                     "score": fidelity_report.score,
@@ -1150,11 +1206,13 @@ class SmartCompressor:
                 f"压缩阀门: {policy.mode}; 目标比例: {policy.target_ratio:.0%}; "
                 f"原因: {policy.reason}。请在不违反绝对边界的前提下尽量贴近目标。"
             )
+        protected_text = format_protected_spans(self.current_protected_spans)
+        instruction_text = "\n".join(part for part in (policy_text, protected_text) if part)
         payload = {
             "model": self.compressor_model,
             "messages": [
                 {"role": "system", "content": COMPRESSION_SYSTEM_PROMPT},
-                {"role": "user", "content": policy_text + "\n" + json.dumps(messages, ensure_ascii=False)},
+                {"role": "user", "content": instruction_text + "\n" + json.dumps(messages, ensure_ascii=False)},
             ],
             "temperature": 0.0,
             "max_tokens": 4096,
