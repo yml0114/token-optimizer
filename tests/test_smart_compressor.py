@@ -10,7 +10,13 @@ from unittest.mock import patch
 
 import pytest
 
-from token_optimizer.core.smart_compressor import SmartCompressor, find_cheap_sibling
+from token_optimizer.core.smart_compressor import (
+    CheapModelOption,
+    ModelRoute,
+    SmartCompressor,
+    estimate_tokens_from_text,
+    find_cheap_sibling,
+)
 
 
 class TestAutoRouting:
@@ -234,8 +240,52 @@ class TestSmartCompressorCostMath:
             min_rule_tokens_for_smart=1,
         )
         # Use a per-instance route copy, not a global ROUTES mutation.
-        sc.route = replace(sc.route, cheap_max_context=2)
+        tiny_option = replace(sc.route.cheap_options[0], max_context=2)
+        sc.route = replace(sc.route, cheap_options=(tiny_option,))
+        sc.active_option = tiny_option
+        sc.compressor_model = tiny_option.model
         with patch.object(sc, '_call_compressor', side_effect=AssertionError("should not call cheap model")):
             result, meta = sc.compress([{"role": "user", "content": "这是一个明显超过两个token的长输入"}])
         assert meta["mode"] == "rule_only_context_guard"
         assert "上下文窗口" in meta["reason"]
+
+
+class TestSmartCompressorTokenizerAndRouting:
+    """Verify stronger token estimation and multi-candidate routing."""
+
+    def test_multilingual_token_estimator_distinguishes_cjk_and_ascii(self):
+        chinese = estimate_tokens_from_text("这是一个用于压缩测试的中文长句子")
+        english = estimate_tokens_from_text("this is an english compression test sentence")
+        assert chinese > 5
+        assert english > 5
+        assert chinese != len("这是一个用于压缩测试的中文长句子") // 3
+
+    def test_multi_candidate_router_picks_best_profitable_option(self):
+        sc = SmartCompressor(
+            main_model="custom-pro",
+            api_key="sk-test-key",
+            base_url="https://api.example.com/v1",
+            min_rule_tokens_for_smart=1,
+        )
+        expensive = CheapModelOption("custom-expensive-compressor", 0.90, 2.00, max_context=1_000_000)
+        cheap = CheapModelOption("custom-cheap-compressor", 0.01, 0.02, max_context=1_000_000)
+        sc.route = ModelRoute(
+            pattern="custom-pro",
+            main_input_price=1.00,
+            main_output_price=3.00,
+            cheap_options=(expensive, cheap),
+        )
+        sc.active_option = expensive
+        sc.compressor_model = expensive.model
+        sc.is_configured = True
+
+        messages = [{"role": "user", "content": "请压缩这段很长的项目上下文" * 100}]
+        flash_output = [{"role": "user", "content": "压缩项目上下文"}]
+
+        with patch.object(sc, '_call_compressor', return_value=flash_output):
+            result, meta = sc.compress(messages)
+
+        assert meta["mode"] == "smart"
+        assert meta["compressor"] == "custom-cheap-compressor"
+        assert meta["route"]["selected_candidate"] == "custom-cheap-compressor"
+        assert meta["profit_guard"]["projected"]["candidate"] == "custom-cheap-compressor"

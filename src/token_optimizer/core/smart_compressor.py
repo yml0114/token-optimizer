@@ -1,10 +1,10 @@
 """L1 v5: SmartCompressor — Profit-Aware same-key smart compression.
 
 前置条件（全部满足才激活模型压缩，否则自动退化为 v4 纯规则）：
-  1. main_model 能映射到同平台廉价模型（见 ROUTES）
+  1. main_model 能映射到同平台廉价模型候选（见 ROUTES）
   2. api_key 非空（用同一个 key 调廉价模型）
   3. base_url 非空（同一平台，同一 API endpoint）
-  4. 预计成本收益为正，且超过 min_profit_margin
+  4. 真实/准真实 token 估算后，预计成本收益为正且超过 min_profit_margin
   5. API 调用成功、输出通过校验、实际成本仍然收益为正
 
 若任一条件不满足 → 纯规则压缩（v4，零成本）
@@ -22,13 +22,14 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any
 
 import httpx
 
 from token_optimizer.core.signal_noise import (
-    InputCompressor,
     CompressionLevel,
+    InputCompressor,
 )
 
 
@@ -43,70 +44,145 @@ DEFAULT_MIN_PROFIT_MARGIN = 0.05  # require at least 5% cheaper than rule-only
 
 
 @dataclass(frozen=True)
-class ModelRoute:
-    """A same-platform cheap-model route.
+class CheapModelOption:
+    """A cheap compressor candidate on the same API platform."""
 
-    All prices are USD per 1M tokens.
-    The cheap model shares the same API key and base_url with the main model.
+    model: str
+    input_price: float
+    output_price: float
+    max_context: int = 1_000_000
+    cross_generation: bool = False
+    note: str = ""
+
+
+@dataclass(frozen=True)
+class ModelRoute:
+    """A same-platform main-model route with one or more cheap candidates.
+
+    All prices are USD per 1M tokens. Cheap candidates share the same API key and
+    base_url with the main model. The router chooses the best profitable candidate
+    at runtime instead of blindly using the first match.
     """
 
     pattern: str
-    cheap_model: str
     main_input_price: float
     main_output_price: float
-    cheap_input_price: float
-    cheap_output_price: float
-    cheap_max_context: int = 1_000_000
-    cross_generation: bool = False
-    note: str = ""
+    cheap_options: tuple[CheapModelOption, ...]
+
+    @property
+    def cheap_model(self) -> str:
+        """Backward-compatible primary cheap model name."""
+        return self.cheap_options[0].model
+
+    @property
+    def cheap_input_price(self) -> float:
+        return self.cheap_options[0].input_price
+
+    @property
+    def cheap_output_price(self) -> float:
+        return self.cheap_options[0].output_price
+
+    @property
+    def cheap_max_context(self) -> int:
+        return self.cheap_options[0].max_context
+
+    @property
+    def cross_generation(self) -> bool:
+        return self.cheap_options[0].cross_generation
+
+    @property
+    def note(self) -> str:
+        return self.cheap_options[0].note
+
+
+def _mimo_flash(note: str) -> CheapModelOption:
+    return CheapModelOption(
+        model="mimo-v2-flash",
+        input_price=0.10,
+        output_price=0.30,
+        max_context=256_000,
+        cross_generation=True,
+        note=note,
+    )
 
 
 ROUTES: tuple[ModelRoute, ...] = (
     # MiMo V2.5 has no same-generation Flash. Use still-available V2 Flash.
     ModelRoute(
         pattern="mimo-v2.5-pro",
-        cheap_model="mimo-v2-flash",
         main_input_price=1.00,
         main_output_price=3.00,
-        cheap_input_price=0.10,
-        cheap_output_price=0.30,
-        cheap_max_context=256_000,
-        cross_generation=True,
-        note="MiMo V2.5 Pro → V2 Flash：跨代，但同平台同 key，Flash 仍可调用",
+        cheap_options=(
+            _mimo_flash("MiMo V2.5 Pro → V2 Flash：跨代，但同平台同 key，Flash 仍可调用"),
+        ),
     ),
     ModelRoute(
         pattern="mimo-v2.5",
-        cheap_model="mimo-v2-flash",
         main_input_price=0.14,
         main_output_price=0.28,
-        cheap_input_price=0.10,
-        cheap_output_price=0.30,
-        cheap_max_context=256_000,
-        cross_generation=True,
-        note="MiMo V2.5 → V2 Flash：主模型本身已很便宜，必须先算账，收益不足则回退 v4",
+        cheap_options=(
+            _mimo_flash("MiMo V2.5 → V2 Flash：主模型本身已很便宜，必须先算账，收益不足则回退 v4"),
+        ),
     ),
     ModelRoute(
         pattern="mimo-pro",
-        cheap_model="mimo-v2-flash",
         main_input_price=1.00,
         main_output_price=3.00,
-        cheap_input_price=0.10,
-        cheap_output_price=0.30,
-        cheap_max_context=256_000,
-        cross_generation=True,
-        note="MiMo Pro alias → V2 Flash",
+        cheap_options=(
+            _mimo_flash("MiMo Pro alias → V2 Flash"),
+        ),
     ),
 
     # DeepSeek / Qwen / OpenAI / Anthropic examples. Prices are conservative defaults;
     # profit gate protects users if a route becomes uneconomical.
-    ModelRoute("deepseek-v4-pro", "deepseek-v4-flash", 0.435, 0.87, 0.14, 0.28),
-    ModelRoute("deepseek-pro", "deepseek-v4-flash", 0.435, 0.87, 0.14, 0.28),
-    ModelRoute("qwen-max", "qwen-turbo", 2.40, 9.60, 0.05, 0.20),
-    ModelRoute("qwen-plus", "qwen-turbo", 0.40, 1.20, 0.05, 0.20),
-    ModelRoute("gpt-4o", "gpt-4o-mini", 2.50, 10.00, 0.15, 0.60),
-    ModelRoute("gpt-4-turbo", "gpt-4o-mini", 10.00, 30.00, 0.15, 0.60),
-    ModelRoute("claude-3-opus", "claude-3-haiku", 15.00, 75.00, 0.25, 1.25),
-    ModelRoute("claude-3.5-sonnet", "claude-3-haiku", 3.00, 15.00, 0.25, 1.25),
+    ModelRoute(
+        "deepseek-v4-pro",
+        0.435,
+        0.87,
+        (CheapModelOption("deepseek-v4-flash", 0.14, 0.28),),
+    ),
+    ModelRoute(
+        "deepseek-pro",
+        0.435,
+        0.87,
+        (CheapModelOption("deepseek-v4-flash", 0.14, 0.28),),
+    ),
+    ModelRoute(
+        "qwen-max",
+        2.40,
+        9.60,
+        (CheapModelOption("qwen-turbo", 0.05, 0.20),),
+    ),
+    ModelRoute(
+        "qwen-plus",
+        0.40,
+        1.20,
+        (CheapModelOption("qwen-turbo", 0.05, 0.20),),
+    ),
+    ModelRoute(
+        "gpt-4o",
+        2.50,
+        10.00,
+        (CheapModelOption("gpt-4o-mini", 0.15, 0.60),),
+    ),
+    ModelRoute(
+        "gpt-4-turbo",
+        10.00,
+        30.00,
+        (CheapModelOption("gpt-4o-mini", 0.15, 0.60),),
+    ),
+    ModelRoute(
+        "claude-3-opus",
+        15.00,
+        75.00,
+        (CheapModelOption("claude-3-haiku", 0.25, 1.25),),
+    ),
+    ModelRoute(
+        "claude-3.5-sonnet",
+        3.00,
+        15.00,
+        (CheapModelOption("claude-3-haiku", 0.25, 1.25),),
+    ),
 )
 
 
@@ -120,22 +196,88 @@ def find_route(model: str) -> ModelRoute | None:
 
 
 def find_cheap_sibling(model: str) -> str | None:
-    """Backward-compatible helper: return cheap model name or None."""
+    """Backward-compatible helper: return primary cheap model name or None."""
     route = find_route(model)
     return route.cheap_model if route else None
 
 
-def estimate_tokens_from_messages(messages: list[dict[str, Any]]) -> int:
-    """Fast deterministic token estimate.
+# ══════════════════════════════════════════════════════════════════════════════
+# Token estimation
+# ══════════════════════════════════════════════════════════════════════════════
 
-    This intentionally mirrors the existing project convention: ~3 chars/token.
+@lru_cache(maxsize=32)
+def _get_tiktoken_encoding(model: str):  # pragma: no cover - depends on optional package
+    """Return a tiktoken encoding when installed, otherwise None.
+
+    tiktoken is optional: production users who install it get closer token counts;
+    lightweight installs keep deterministic fallback behavior.
+    """
+    try:
+        import tiktoken  # type: ignore
+    except Exception:
+        return None
+
+    try:
+        return tiktoken.encoding_for_model(model)
+    except Exception:
+        try:
+            return tiktoken.get_encoding("cl100k_base")
+        except Exception:
+            return None
+
+
+def estimate_tokens_from_text(text: str, model: str = "") -> int:
+    """Estimate tokens with real tokenizer when available, fallback otherwise.
+
+    Fallback is multilingual-aware instead of the old raw ``len(text)//3``:
+    - CJK characters are denser and often close to 1 char/token.
+    - ASCII words are closer to ~4 chars/token.
+    - Other unicode sits in between.
+    """
+    if not text:
+        return 0
+
+    encoding = _get_tiktoken_encoding(model) if model else None
+    if encoding is not None:  # pragma: no cover - optional dependency path
+        return max(1, len(encoding.encode(text)))
+
+    ascii_chars = 0
+    cjk_chars = 0
+    other_chars = 0
+    for ch in text:
+        code = ord(ch)
+        if code < 128:
+            ascii_chars += 1
+        elif 0x4E00 <= code <= 0x9FFF or 0x3400 <= code <= 0x4DBF:
+            cjk_chars += 1
+        else:
+            other_chars += 1
+
+    tokens = int(ascii_chars / 4.0 + cjk_chars / 1.7 + other_chars / 2.5)
+    return max(1, tokens)
+
+
+def estimate_tokens_from_messages(
+    messages: list[dict[str, Any]],
+    model: str = "",
+    include_message_overhead: bool = True,
+) -> int:
+    """Estimate chat tokens from messages.
+
+    Includes lightweight chat-message overhead so cost guards don't undercount many
+    short messages. Uses tiktoken if installed; otherwise multilingual fallback.
     """
     total = 0
     for msg in messages:
+        if include_message_overhead:
+            total += 4  # role/name/separators; conservative chat envelope estimate
+        role = msg.get("role", "")
         content = msg.get("content", "")
+        if isinstance(role, str):
+            total += estimate_tokens_from_text(role, model=model)
         if isinstance(content, str):
-            total += max(1, len(content) // 3)
-    return total
+            total += estimate_tokens_from_text(content, model=model)
+    return max(0, total)
 
 
 def estimate_cost(
@@ -156,7 +298,8 @@ def estimate_route_profit(
     rule_tokens: int,
     smart_tokens: int,
     output_ratio: float = DEFAULT_OUTPUT_RATIO,
-) -> dict[str, float | bool]:
+    cheap_option: CheapModelOption | None = None,
+) -> dict[str, float | bool | str]:
     """Compare rule-only cost vs cheap-compressor + main-model cost.
 
     Rule-only path:
@@ -165,6 +308,7 @@ def estimate_route_profit(
     Smart path:
         cheap_model(rule_tokens → smart_tokens) + main_model(smart_tokens → answer)
     """
+    option = cheap_option or route.cheap_options[0]
     rule_output_tokens = int(rule_tokens * output_ratio)
     smart_answer_tokens = int(smart_tokens * output_ratio)
 
@@ -177,8 +321,8 @@ def estimate_route_profit(
     compressor_cost = estimate_cost(
         rule_tokens,
         smart_tokens,
-        route.cheap_input_price,
-        route.cheap_output_price,
+        option.input_price,
+        option.output_price,
     )
     main_after_cost = estimate_cost(
         smart_tokens,
@@ -191,6 +335,7 @@ def estimate_route_profit(
     savings_pct = (savings / rule_cost * 100) if rule_cost > 0 else 0.0
 
     return {
+        "candidate": option.model,
         "rule_cost": round(rule_cost, 8),
         "smart_total_cost": round(smart_total_cost, 8),
         "compressor_cost": round(compressor_cost, 8),
@@ -249,7 +394,8 @@ class SmartCompressor:
         self.api_key = api_key
         self.base_url = base_url.rstrip("/") if base_url else ""
         self.route = find_route(main_model) if main_model else None
-        self.compressor_model = self.route.cheap_model if self.route else ""
+        self.active_option: CheapModelOption | None = self.route.cheap_options[0] if self.route else None
+        self.compressor_model = self.active_option.model if self.active_option else ""
         self.min_profit_margin = min_profit_margin
         self.min_rule_tokens_for_smart = min_rule_tokens_for_smart
         self.expected_smart_ratio = expected_smart_ratio
@@ -273,7 +419,9 @@ class SmartCompressor:
                 rule_meta=rule_meta,
             )
 
-        rule_tokens = rule_meta.get("compressed_tokens_est") or estimate_tokens_from_messages(rule_result)
+        rule_tokens = rule_meta.get("compressed_tokens_est") or estimate_tokens_from_messages(
+            rule_result, model=self.main_model
+        )
         if rule_tokens < self.min_rule_tokens_for_smart:
             return rule_result, self._meta(
                 mode="rule_only_profit_guard",
@@ -282,22 +430,24 @@ class SmartCompressor:
                 projected=self._project_profit(rule_tokens),
             )
 
-        if rule_tokens > self.route.cheap_max_context:
-            return rule_result, self._meta(
-                mode="rule_only_context_guard",
-                reason="规则压缩后仍超过廉价模型上下文窗口，回退主模型纯规则路径",
-                rule_meta=rule_meta,
-                projected=None,
+        selected, projected, diagnostics = self._select_best_option(rule_tokens)
+        if selected is None:
+            all_context_blocked = bool(diagnostics) and all(
+                item.get("blocked_by_context") for item in diagnostics
             )
-
-        projected = self._project_profit(rule_tokens)
-        if not projected["profitable"] or projected["savings_pct"] < self.min_profit_margin * 100:
             return rule_result, self._meta(
-                mode="rule_only_profit_guard",
-                reason="预测收益不足，不调用廉价模型",
+                mode="rule_only_context_guard" if all_context_blocked else "rule_only_profit_guard",
+                reason=(
+                    "规则压缩后仍超过所有廉价模型上下文窗口，回退主模型纯规则路径"
+                    if all_context_blocked else "所有廉价模型候选预测收益不足，不调用模型压缩"
+                ),
                 rule_meta=rule_meta,
                 projected=projected,
+                candidate_diagnostics=diagnostics,
             )
+
+        self.active_option = selected
+        self.compressor_model = selected.model
 
         try:
             smart_result = self._call_compressor(rule_result)
@@ -308,10 +458,16 @@ class SmartCompressor:
                     reason="廉价模型输出校验未通过（过长/丢失system/缺失user）",
                     rule_meta=rule_meta,
                     projected=projected,
+                    candidate_diagnostics=diagnostics,
                 )
 
-            final_tokens = estimate_tokens_from_messages(smart_result)
-            actual_profit = estimate_route_profit(self.route, rule_tokens, final_tokens)
+            final_tokens = estimate_tokens_from_messages(smart_result, model=self.main_model)
+            actual_profit = estimate_route_profit(
+                self.route,
+                rule_tokens,
+                final_tokens,
+                cheap_option=selected,
+            )
             if (
                 not actual_profit["profitable"]
                 or actual_profit["savings_pct"] < self.min_profit_margin * 100
@@ -322,6 +478,7 @@ class SmartCompressor:
                     rule_meta=rule_meta,
                     projected=projected,
                     actual_profit=actual_profit,
+                    candidate_diagnostics=diagnostics,
                 )
 
             return smart_result, self._meta(
@@ -330,6 +487,7 @@ class SmartCompressor:
                 rule_meta=rule_meta,
                 projected=projected,
                 actual_profit=actual_profit,
+                candidate_diagnostics=diagnostics,
                 smart_compression={
                     "model": self.compressor_model,
                     "input_tokens": rule_tokens,
@@ -346,12 +504,55 @@ class SmartCompressor:
                 reason=f"廉价模型调用失败: {str(e)[:200]}",
                 rule_meta=rule_meta,
                 projected=projected,
+                candidate_diagnostics=diagnostics,
             )
 
-    def _project_profit(self, rule_tokens: int) -> dict[str, float | bool]:
+    def _project_profit(
+        self,
+        rule_tokens: int,
+        option: CheapModelOption | None = None,
+    ) -> dict[str, float | bool | str]:
         assert self.route is not None
         expected_smart_tokens = max(1, int(rule_tokens * self.expected_smart_ratio))
-        return estimate_route_profit(self.route, rule_tokens, expected_smart_tokens)
+        return estimate_route_profit(
+            self.route,
+            rule_tokens,
+            expected_smart_tokens,
+            cheap_option=option,
+        )
+
+    def _select_best_option(
+        self,
+        rule_tokens: int,
+    ) -> tuple[CheapModelOption | None, dict | None, list[dict]]:
+        """Pick the most profitable cheap candidate that can fit the input."""
+        assert self.route is not None
+        diagnostics: list[dict] = []
+        best_option: CheapModelOption | None = None
+        best_projection: dict | None = None
+
+        for option in self.route.cheap_options:
+            if rule_tokens > option.max_context:
+                diagnostics.append({
+                    "candidate": option.model,
+                    "blocked_by_context": True,
+                    "cheap_max_context": option.max_context,
+                })
+                continue
+
+            projection = self._project_profit(rule_tokens, option=option)
+            projection = dict(projection)
+            projection["blocked_by_context"] = False
+            projection["cheap_max_context"] = option.max_context
+            diagnostics.append(projection)
+
+            if not projection["profitable"] or projection["savings_pct"] < self.min_profit_margin * 100:
+                continue
+            if best_projection is None or projection["savings"] > best_projection["savings"]:
+                best_option = option
+                best_projection = projection
+
+        return best_option, best_projection, diagnostics
 
     def _meta(
         self,
@@ -360,29 +561,36 @@ class SmartCompressor:
         rule_meta: dict,
         projected: dict | None = None,
         actual_profit: dict | None = None,
+        candidate_diagnostics: list[dict] | None = None,
         smart_compression: dict | None = None,
     ) -> dict:
         route_info = None
         if self.route:
+            active = self.active_option or self.route.cheap_options[0]
             route_info = {
                 "main_model": self.main_model,
                 "compressor": self.compressor_model,
-                "cross_generation": self.route.cross_generation,
-                "note": self.route.note,
+                "selected_candidate": active.model,
+                "candidate_count": len(self.route.cheap_options),
+                "candidates": [option.model for option in self.route.cheap_options],
+                "cross_generation": active.cross_generation,
+                "note": active.note,
                 "main_input_price": self.route.main_input_price,
-                "cheap_input_price": self.route.cheap_input_price,
-                "cheap_max_context": self.route.cheap_max_context,
+                "cheap_input_price": active.input_price,
+                "cheap_max_context": active.max_context,
             }
         return {
             "mode": mode,
             "compressor": self.compressor_model or "none",
             "reason": reason,
             "route": route_info,
+            "token_estimator": "tiktoken_if_installed_else_multilingual_fallback",
             "profit_guard": {
                 "min_profit_margin_pct": round(self.min_profit_margin * 100, 2),
                 "min_rule_tokens_for_smart": self.min_rule_tokens_for_smart,
                 "projected": projected,
                 "actual": actual_profit,
+                "candidate_diagnostics": candidate_diagnostics,
             },
             "rule_compression": rule_meta,
             "smart_compression": smart_compression,
@@ -447,8 +655,8 @@ class SmartCompressor:
         if not isinstance(compressed, list) or not compressed:
             return False
 
-        orig_t = estimate_tokens_from_messages(original)
-        comp_t = estimate_tokens_from_messages(compressed)
+        orig_t = estimate_tokens_from_messages(original, model=self.main_model)
+        comp_t = estimate_tokens_from_messages(compressed, model=self.main_model)
 
         if comp_t > orig_t:
             return False
