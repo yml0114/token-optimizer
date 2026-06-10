@@ -39,7 +39,10 @@ from token_optimizer.core.signal_noise import (
 
 TOKENS_PER_MILLION = 1_000_000
 DEFAULT_OUTPUT_RATIO = 0.20
-DEFAULT_SMART_TARGET_RATIO = 0.30
+DEFAULT_SAFE_SMART_TARGET_RATIO = 0.30
+DEFAULT_EXTREME_SMART_TARGET_RATIO = 0.22
+DEFAULT_PROTECTED_SMART_TARGET_RATIO = 0.45
+DEFAULT_SMART_TARGET_RATIO = DEFAULT_SAFE_SMART_TARGET_RATIO
 DEFAULT_MIN_PROFIT_MARGIN = 0.05  # require at least 5% cheaper than rule-only
 
 
@@ -119,6 +122,83 @@ class CandidateLearningStats:
     @property
     def avg_savings_pct(self) -> float | None:
         return self.total_savings_pct / self.successes if self.successes else None
+
+
+@dataclass(frozen=True)
+class CompressionPolicy:
+    """Risk-aware compression target.
+
+    safe: default production target.
+    extreme: low-risk noisy/history/tool content can be compressed harder.
+    protected: high-risk code/errors/numbers/legal/finance/medical content keeps more context.
+    """
+
+    mode: str
+    target_ratio: float
+    reason: str
+    risk_score: int
+
+
+HIGH_RISK_KEYWORDS = (
+    "```", "traceback", "exception", "error", "api_key", "token", "password",
+    "http://", "https://", "file:", "/app/", "/users/", "def ", "class ",
+    "import ", "select ", "insert ", "update ", "delete ", "金融", "股票", "投资",
+    "法律", "合同", "医疗", "诊断", "药", "价格", "成本", "$", "¥", "%",
+)
+
+LOW_RISK_KEYWORDS = (
+    "谢谢", "你好", "好的", "不客气", "顺便", "就是说", "其实", "反正",
+    "当然可以", "希望", "大概", "简单说", "总结", "历史", "背景", "metadata",
+    "trace_id", "log_id", "status", "encoding", "file_size",
+)
+
+
+def assess_compression_policy(messages: list[dict[str, Any]]) -> CompressionPolicy:
+    """Choose safe/extreme/protected compression target from message content.
+
+    This is a cheap pre-flight gate. It does not try to understand everything; it
+    only prevents obviously risky content from being over-compressed while allowing
+    repetitive/noisy context to use a more aggressive target.
+    """
+    text_parts: list[str] = []
+    tool_chars = 0
+    assistant_chars = 0
+    for msg in messages:
+        content = msg.get("content", "")
+        if not isinstance(content, str):
+            continue
+        text_parts.append(content.lower())
+        if msg.get("role") == "tool":
+            tool_chars += len(content)
+        if msg.get("role") == "assistant":
+            assistant_chars += len(content)
+
+    joined = "\n".join(text_parts)
+    risk_score = sum(1 for kw in HIGH_RISK_KEYWORDS if kw.lower() in joined)
+    noise_score = sum(1 for kw in LOW_RISK_KEYWORDS if kw.lower() in joined)
+    total_chars = max(1, sum(len(x) for x in text_parts))
+    tool_or_assistant_ratio = (tool_chars + assistant_chars) / total_chars
+
+    if risk_score >= 2:
+        return CompressionPolicy(
+            mode="protected",
+            target_ratio=DEFAULT_PROTECTED_SMART_TARGET_RATIO,
+            reason="检测到代码/错误/数字/路径/金融法律医疗等高风险信息，启用保护阀",
+            risk_score=risk_score,
+        )
+    if noise_score >= 3 or tool_or_assistant_ratio > 0.55:
+        return CompressionPolicy(
+            mode="extreme",
+            target_ratio=DEFAULT_EXTREME_SMART_TARGET_RATIO,
+            reason="检测到高冗余历史/工具噪声/寒暄解释，启用激进阀",
+            risk_score=risk_score,
+        )
+    return CompressionPolicy(
+        mode="safe",
+        target_ratio=DEFAULT_SAFE_SMART_TARGET_RATIO,
+        reason="默认生产安全阀",
+        risk_score=risk_score,
+    )
 
 
 def _mimo_flash(note: str) -> CheapModelOption:
@@ -420,6 +500,9 @@ class SmartCompressor:
         min_profit_margin: float = DEFAULT_MIN_PROFIT_MARGIN,
         min_rule_tokens_for_smart: int = 128,
         expected_smart_ratio: float = DEFAULT_SMART_TARGET_RATIO,
+        safe_target_ratio: float = DEFAULT_SAFE_SMART_TARGET_RATIO,
+        extreme_target_ratio: float = DEFAULT_EXTREME_SMART_TARGET_RATIO,
+        protected_target_ratio: float = DEFAULT_PROTECTED_SMART_TARGET_RATIO,
         learning_enabled: bool = True,
         max_consecutive_failures: int = 2,
         circuit_breaker_cooldown: int = 20,
@@ -436,6 +519,10 @@ class SmartCompressor:
         self.min_profit_margin = min_profit_margin
         self.min_rule_tokens_for_smart = min_rule_tokens_for_smart
         self.expected_smart_ratio = expected_smart_ratio
+        self.safe_target_ratio = safe_target_ratio
+        self.extreme_target_ratio = extreme_target_ratio
+        self.protected_target_ratio = protected_target_ratio
+        self.current_policy: CompressionPolicy | None = None
         self.learning_enabled = learning_enabled
         self.max_consecutive_failures = max_consecutive_failures
         self.circuit_breaker_cooldown = circuit_breaker_cooldown
@@ -463,6 +550,8 @@ class SmartCompressor:
                 reason=f"规则压缩器异常，已安全旁路且未调用廉价模型: {str(e)[:200]}",
                 rule_meta={"error": str(e)[:200]},
             )
+
+        self.current_policy = self._assess_policy(rule_result)
 
         if not self.is_configured or not self.route:
             return rule_result, self._meta(
@@ -522,7 +611,7 @@ class SmartCompressor:
         self.compressor_model = selected.model
 
         try:
-            smart_result = self._call_compressor(rule_result)
+            smart_result = self._call_compressor(rule_result, policy=self.current_policy)
 
             if not self._validate(smart_result, messages):
                 self._record_learning(selected, success=False, reason="validation_failed")
@@ -599,18 +688,30 @@ class SmartCompressor:
                 candidate_diagnostics=diagnostics,
             )
 
+    def _assess_policy(self, messages: list[dict[str, Any]]) -> CompressionPolicy:
+        policy = assess_compression_policy(messages)
+        if policy.mode == "safe":
+            return CompressionPolicy(policy.mode, self.safe_target_ratio, policy.reason, policy.risk_score)
+        if policy.mode == "extreme":
+            return CompressionPolicy(policy.mode, self.extreme_target_ratio, policy.reason, policy.risk_score)
+        return CompressionPolicy(policy.mode, self.protected_target_ratio, policy.reason, policy.risk_score)
+
     def _expected_ratio_for(self, option: CheapModelOption | None = None) -> float:
         """Learned expected compression ratio for cost projection.
 
-        Successful real calls update the ratio. We use a small optimism buffer but
-        clamp it, so projections gradually improve without becoming reckless.
+        Base target comes from dual-threshold policy. Successful real calls can
+        refine it, but protected mode never becomes more aggressive than its guard.
         """
+        base_ratio = self.current_policy.target_ratio if self.current_policy else self.expected_smart_ratio
         if not self.learning_enabled or option is None:
-            return self.expected_smart_ratio
+            return base_ratio
         stats = self.learning_stats.get(option.model)
         if not stats or stats.avg_ratio is None:
-            return self.expected_smart_ratio
-        return min(0.95, max(0.05, stats.avg_ratio * 1.10))
+            return base_ratio
+        learned = min(0.95, max(0.05, stats.avg_ratio * 1.10))
+        if self.current_policy and self.current_policy.mode == "protected":
+            return max(base_ratio, learned)
+        return min(base_ratio, learned)
 
     def _project_profit(
         self,
@@ -750,6 +851,15 @@ class SmartCompressor:
             "reason": reason,
             "route": route_info,
             "token_estimator": "tiktoken_if_installed_else_multilingual_fallback",
+            "compression_policy": (
+                {
+                    "mode": self.current_policy.mode,
+                    "target_ratio": self.current_policy.target_ratio,
+                    "reason": self.current_policy.reason,
+                    "risk_score": self.current_policy.risk_score,
+                }
+                if self.current_policy else None
+            ),
             "profit_guard": {
                 "min_profit_margin_pct": round(self.min_profit_margin * 100, 2),
                 "min_rule_tokens_for_smart": self.min_rule_tokens_for_smart,
@@ -774,16 +884,26 @@ class SmartCompressor:
             "smart_compression": smart_compression,
         }
 
-    def _call_compressor(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _call_compressor(
+        self,
+        messages: list[dict[str, Any]],
+        policy: CompressionPolicy | None = None,
+    ) -> list[dict[str, Any]]:
         """Call the cheap model to compress messages.
 
         Same API key and base_url as the user's main model; only `model` changes.
         """
+        policy_text = ""
+        if policy is not None:
+            policy_text = (
+                f"压缩阀门: {policy.mode}; 目标比例: {policy.target_ratio:.0%}; "
+                f"原因: {policy.reason}。请在不违反绝对边界的前提下尽量贴近目标。"
+            )
         payload = {
             "model": self.compressor_model,
             "messages": [
                 {"role": "system", "content": COMPRESSION_SYSTEM_PROMPT},
-                {"role": "user", "content": json.dumps(messages, ensure_ascii=False)},
+                {"role": "user", "content": policy_text + "\n" + json.dumps(messages, ensure_ascii=False)},
             ],
             "temperature": 0.0,
             "max_tokens": 4096,

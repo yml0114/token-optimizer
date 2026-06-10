@@ -14,6 +14,7 @@ from token_optimizer.core.smart_compressor import (
     CheapModelOption,
     ModelRoute,
     SmartCompressor,
+    assess_compression_policy,
     estimate_tokens_from_text,
     find_cheap_sibling,
 )
@@ -345,3 +346,38 @@ class TestSmartCompressorSelfLearningRepair:
         assert result == messages
         assert meta["mode"] == "safe_passthrough_repair"
         assert "未调用廉价模型" in meta["reason"]
+
+
+
+class TestSmartCompressorDualThresholdPolicy:
+    """Verify safe/extreme/protected dual-threshold policy."""
+
+    def test_policy_extreme_for_low_risk_noise(self):
+        policy = assess_compression_policy([
+            {"role": "assistant", "content": "当然可以，谢谢你的补充。就是说这个历史背景大概可以总结一下。" * 8},
+            {"role": "tool", "content": '{"status":"ok","metadata":{"trace_id":"abc","file_size":123}}'},
+        ])
+        assert policy.mode == "extreme"
+        assert policy.target_ratio == 0.22
+
+    def test_policy_protected_for_code_and_errors(self):
+        policy = assess_compression_policy([
+            {"role": "user", "content": "Traceback: ValueError at /app/main.py line 42, def run(): return price * 0.2"},
+        ])
+        assert policy.mode == "protected"
+        assert policy.target_ratio == 0.45
+
+    def test_policy_metadata_exposed_in_compress_result(self):
+        sc = SmartCompressor(
+            main_model="mimo-v2.5-pro",
+            api_key="sk-test-key",
+            base_url="https://api.xiaomimimo.com/v1",
+            min_rule_tokens_for_smart=1,
+        )
+        messages = [{"role": "user", "content": "谢谢，就是说这个历史背景大概总结一下" * 20}]
+        flash_output = [{"role": "user", "content": "总结历史背景"}]
+        with patch.object(sc, '_call_compressor', return_value=flash_output):
+            result, meta = sc.compress(messages)
+        assert meta["mode"] == "smart"
+        assert meta["compression_policy"]["mode"] in {"safe", "extreme"}
+        assert "target_ratio" in meta["compression_policy"]
