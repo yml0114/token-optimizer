@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -140,6 +141,8 @@ class OfficialSelectiveContextAdapter:
     def available(self) -> tuple[bool, str | None]:
         if not _has_module("selective_context"):
             return False, "Python package 'selective_context' is not installed"
+        if os.environ.get("TOKEN_OPTIMIZER_ENABLE_OFFICIAL_COMPETITORS") != "1":
+            return False, "Set TOKEN_OPTIMIZER_ENABLE_OFFICIAL_COMPETITORS=1 to run official Selective Context"
         return False, "Package detected but stable zero-config adapter is not enabled"
 
     def compress(self, messages: list[dict[str, Any]]) -> CompressResult:
@@ -152,10 +155,27 @@ class LLMLingua2Adapter:
     def available(self) -> tuple[bool, str | None]:
         if not _has_module("llmlingua"):
             return False, "Python package 'llmlingua' is not installed"
-        return False, "Package detected but model-backed compression is not configured"
+        if os.environ.get("TOKEN_OPTIMIZER_ENABLE_OFFICIAL_COMPETITORS") != "1":
+            return False, "Set TOKEN_OPTIMIZER_ENABLE_OFFICIAL_COMPETITORS=1 to run model-backed LLMLingua"
+        model_name = os.environ.get("TOKEN_OPTIMIZER_LLMLINGUA_MODEL")
+        if not model_name:
+            return False, "Set TOKEN_OPTIMIZER_LLMLINGUA_MODEL to a local/available LLMLingua model path or id"
+        return True, None
 
     def compress(self, messages: list[dict[str, Any]]) -> CompressResult:
-        raise RuntimeError("LLMLingua-2 official adapter is not configured")
+        from llmlingua import PromptCompressor  # type: ignore
+
+        model_name = os.environ["TOKEN_OPTIMIZER_LLMLINGUA_MODEL"]
+        rate = float(os.environ.get("TOKEN_OPTIMIZER_LLMLINGUA_RATE", "0.5"))
+        prompt = "\n".join(f"{m.get('role', 'user')}: {m.get('content', '')}" for m in messages)
+        compressor = PromptCompressor(model_name=model_name)
+        result = compressor.compress_prompt(prompt, rate=rate)
+        compressed_prompt = result.get("compressed_prompt") if isinstance(result, dict) else str(result)
+        return CompressResult(
+            messages=[{"role": "user", "content": compressed_prompt}],
+            mode="llmlingua2_official",
+            notes=f"model={model_name}, rate={rate}",
+        )
 
 
 def _has_module(module_name: str) -> bool:
@@ -172,6 +192,8 @@ class PCToolkitAdapter:
         candidates = ("pctoolkit", "prompt_compression_toolkit", "pctoolkit.compressors")
         if not any(_has_module(name) for name in candidates):
             return False, "PCToolkit package is not installed"
+        if os.environ.get("TOKEN_OPTIMIZER_ENABLE_OFFICIAL_COMPETITORS") != "1":
+            return False, "Set TOKEN_OPTIMIZER_ENABLE_OFFICIAL_COMPETITORS=1 to run official PCToolkit"
         return False, "Package detected but adapter mapping is not configured"
 
     def compress(self, messages: list[dict[str, Any]]) -> CompressResult:
