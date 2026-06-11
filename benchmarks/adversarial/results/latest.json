@@ -1,43 +1,10 @@
 {
   "total_cases": 20,
   "total_qa": 186,
-  "passed_qa": 184,
-  "qa_rate": 0.989247311827957,
-  "perfect_cases": 18,
-  "failed_cases": [
-    {
-      "id": "adv_noise_meeting_011",
-      "category": "long_noise",
-      "title": "Noisy meeting with final decisions",
-      "attack": "filler and reversals around key facts",
-      "path": "benchmarks/adversarial/cases/adv_noise_meeting_011.json",
-      "tokens": 118,
-      "keep_ratio": 0.95,
-      "method": "adaptive",
-      "qa_passed": 7,
-      "qa_total": 8,
-      "qa_rate": 0.875,
-      "misses": [
-        "30 real-world cases/30 cases"
-      ]
-    },
-    {
-      "id": "adv_units_budget_003",
-      "category": "unit_variants",
-      "title": "Budget represented as 4.5k dollars",
-      "attack": "currency unit variants",
-      "path": "benchmarks/adversarial/cases/adv_units_budget_003.json",
-      "tokens": 99,
-      "keep_ratio": 0.95,
-      "method": "adaptive",
-      "qa_passed": 6,
-      "qa_total": 7,
-      "qa_rate": 0.8571428571428571,
-      "misses": [
-        "nine hundred/900"
-      ]
-    }
-  ],
+  "passed_qa": 186,
+  "qa_rate": 1.0,
+  "perfect_cases": 20,
+  "failed_cases": [],
   "rows": [
     {
       "id": "adv_code_negation_016",
@@ -174,12 +141,10 @@
       "tokens": 118,
       "keep_ratio": 0.95,
       "method": "adaptive",
-      "qa_passed": 7,
+      "qa_passed": 8,
       "qa_total": 8,
-      "qa_rate": 0.875,
-      "misses": [
-        "30 real-world cases/30 cases"
-      ]
+      "qa_rate": 1.0,
+      "misses": []
     },
     {
       "id": "adv_paraphrase_cost_001",
@@ -302,12 +267,10 @@
       "tokens": 99,
       "keep_ratio": 0.95,
       "method": "adaptive",
-      "qa_passed": 6,
+      "qa_passed": 7,
       "qa_total": 7,
-      "qa_rate": 0.8571428571428571,
-      "misses": [
-        "nine hundred/900"
-      ]
+      "qa_rate": 1.0,
+      "misses": []
     },
     {
       "id": "adv_units_latency_004",

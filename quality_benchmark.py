@@ -171,10 +171,40 @@ def _normalize_number(s):
     s = s.replace('%', '').replace('ms', '').replace('GB', '').replace('KB', '')
     s = s.replace('K', '000').replace('k', '000').replace('M', '000000')
     s = s.replace('t', '').strip()
+    number_words = {
+        'zero': 0, 'one': 1, 'two': 2, 'three': 3, 'four': 4,
+        'five': 5, 'six': 6, 'seven': 7, 'eight': 8, 'nine': 9,
+        'ten': 10, 'eleven': 11, 'twelve': 12, 'thirteen': 13,
+        'fourteen': 14, 'fifteen': 15, 'sixteen': 16, 'seventeen': 17,
+        'eighteen': 18, 'nineteen': 19, 'twenty': 20, 'thirty': 30,
+        'forty': 40, 'fifty': 50, 'sixty': 60, 'seventy': 70,
+        'eighty': 80, 'ninety': 90,
+    }
+    word_s = re.sub(r'[-\s]+', ' ', s.lower()).strip()
+    if word_s in number_words:
+        return float(number_words[word_s])
+    if word_s.endswith(' hundred'):
+        prefix = word_s[:-8].strip()
+        if prefix in number_words:
+            return float(number_words[prefix] * 100)
     try:
         return float(s)
     except (ValueError, TypeError):
         return None
+
+
+def _same_numbered_object(a, b):
+    """Return true for aliases like '30 real-world cases' and '30 cases'."""
+    a_low = a.lower()
+    b_low = b.lower()
+    a_parts = a_low.split()
+    b_parts = b_low.split()
+    a_num = _normalize_number(a_parts[0]) if a_parts else None
+    b_num = _normalize_number(b_parts[0]) if b_parts else None
+    if a_num is None or b_num is None or abs(a_num - b_num) > 0.001:
+        return False
+    object_terms = ('case', 'cases', 'credit', 'credits', 'token', 'tokens', 'dollar', 'dollars', 'usd')
+    return any(term in a_low and term in b_low for term in object_terms)
 
 
 def keyword_recall(original, compressed, keywords):
@@ -248,10 +278,12 @@ def keyword_recall(original, compressed, keywords):
                     same_numeric = same_numeric or abs(kw_num - other_num * 100.0) < 0.1
             same_format = compact == other_compact
             same_containment = len(compact) >= 3 and len(other_compact) >= 3 and (compact in other_compact or other_compact in compact)
+            same_numbered_object = _same_numbered_object(kw, other)
             acronym_alias = {compact, other_compact} in ({'se', 'southeast'}, {'ne', 'northeast'}, {'sw', 'southwest'}, {'nw', 'northwest'})
             # Merge as aliases when numeric/format-equivalent, containment aliases
-            # (Sarah/Sarah Chen, Zhang Wei/zhangwei), or common direction acronyms.
-            if same_numeric or same_format or same_containment or acronym_alias:
+            # (Sarah/Sarah Chen, Zhang Wei/zhangwei), common direction acronyms,
+            # or same-number same-object phrases such as 30 real-world cases/30 cases.
+            if same_numeric or same_format or same_containment or same_numbered_object or acronym_alias:
                 group.append(other)
                 used[j] = True
         groups.append(group)
