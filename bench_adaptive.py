@@ -12,6 +12,7 @@ from token_optimizer.core.signal_noise import InputCompressor, CompressionLevel
 from token_optimizer.core.compression_store import CompressionStore
 from token_optimizer.core.adaptive_compressor import AdaptiveCompressor
 from token_optimizer.core.json_aware import JsonAwareCompressor
+from token_optimizer.core.near_dedup import NearDeduplicator
 
 try:
     import tiktoken
@@ -118,6 +119,46 @@ def scenario_json():
     ]
 
 
+def scenario_with_dedup():
+    """含近似副本的对话：重复系统提示+相似工具输出+模板回复"""
+    base_system = "你是一个专业的编程助手，专门帮助用户解决各类编程问题。你需要仔细分析问题，给出详细的代码示例和解释。如果用户的问题不够清楚，请先确认再回答。请用简洁专业的语言，避免冗余的解释。"
+    msgs = [
+        {"role": "system", "content": base_system},
+        {"role": "user", "content": "写一个Python快速排序"},
+        {"role": "assistant", "content": "```python\ndef quicksort(arr):\n    if len(arr) <= 1:\n        return arr\n    pivot = arr[len(arr) // 2]\n    left = [x for x in arr if x < pivot]\n    middle = [x for x in arr if x == pivot]\n    right = [x for x in arr if x > pivot]\n    return quicksort(left) + middle + quicksort(right)\n```\n时间复杂度：平均O(n log n)，最坏O(n²)。空间复杂度O(log n)。"},
+        {"role": "user", "content": "写一个Python归并排序"},
+        {"role": "assistant", "content": "```python\ndef mergesort(arr):\n    if len(arr) <= 1:\n        return arr\n    mid = len(arr) // 2\n    left = mergesort(arr[:mid])\n    right = mergesort(arr[mid:])\n    return merge(left, right)\n\ndef merge(left, right):\n    result = []\n    i = j = 0\n    while i < len(left) and j < len(right):\n        if left[i] <= right[j]:\n            result.append(left[i])\n            i += 1\n        else:\n            result.append(right[j])\n            j += 1\n    result.extend(left[i:])\n    result.extend(right[j:])\n    return result\n```\n时间复杂度：始终O(n log n)。空间复杂度O(n)。"},
+    ]
+    # 添加8轮几乎相同的工具调用+结果（模拟重复API查询）
+    for i in range(8):
+        cache_hit = "true" if i % 3 == 0 else "false"
+        tool_output = (
+            '{"status": "success", "query_id": "q' + str(1000+i) + '", '
+            '"timestamp": "2026-06-11T' + str(10+i) + ':00:00Z", '
+            '"data": {"endpoint": "/api/v' + str(1+i) + '/users", '
+            '"method": "GET", "status_code": 200, '
+            '"response_time_ms": ' + str(45+i*3) + ', '
+            '"results_count": ' + str(120+i*10) + ', '
+            '"cache_hit": ' + cache_hit + ', '
+            '"rate_limit_remaining": ' + str(500-i*50) + ', '
+            '"metadata": {"version": "2.1.' + str(i) + '", '
+            '"region": "cn-north-1", '
+            '"request_id": "req_' + str(10000+i) + '"}}}}'
+        )
+        msgs.extend([
+            {"role": "user", "content": f"查询用户列表（第{i+1}页）"},
+            {"role": "tool", "content": tool_output},
+            {"role": "assistant", "content": f"查询成功。第{i+1}页返回了{120+i*10}条记录，响应时间{45+i*3}ms。{'命中缓存。' if i % 3 == 0 else '未命中缓存。'}剩余配额{500-i*50}次。数据概览：本页用户主要分布在北京、上海、深圳三个城市，平均年龄28岁，男女比例约6:4。活跃用户占比{85+i}%，新注册用户{15+i*2}人。建议关注用户留存率和转化率指标，结合历史数据进行趋势分析。如需进一步筛选或导出数据，请告知具体条件。"},
+        ])
+    # 第二轮系统提示（微小差异，模拟多会话拼接）
+    msgs.append({"role": "system", "content": base_system.replace("专业的编程助手", "专业的代码助手")})
+    msgs.extend([
+        {"role": "user", "content": "写一个Python二分查找"},
+        {"role": "assistant", "content": "```python\ndef binary_search(arr, target):\n    left, right = 0, len(arr) - 1\n    while left <= right:\n        mid = (left + right) // 2\n        if arr[mid] == target:\n            return mid\n        elif arr[mid] < target:\n            left = mid + 1\n        else:\n            right = mid - 1\n    return -1\n```\n时间复杂度：O(log n)。要求输入数组已排序。"},
+    ])
+    return msgs
+
+
 # ══════════════════════════════════════════════════════════════
 # 压缩算法实现
 # ══════════════════════════════════════════════════════════════
@@ -178,10 +219,10 @@ def run_input_plus_ccr(msgs, level_name, keep_ratio=0.4):
     elapsed = (time.perf_counter() - t0) * 1000
     return final, {"noise_pct": noise_meta.get("savings_pct", 0), "entries": len(store._store)}, elapsed
 
-def run_adaptive(msgs, level_name, keep_ratio=0.4, json_aware=True):
-    """自适应压缩（Phase 2: 含JSON-aware）"""
+def run_adaptive(msgs, level_name, keep_ratio=0.4, json_aware=True, near_dedup=True):
+    """自适应压缩（Phase 3: 含JSON-aware + 近似去重）"""
     level = CompressionLevel(level_name)
-    ac = AdaptiveCompressor(level=level, json_aware=json_aware)
+    ac = AdaptiveCompressor(level=level, json_aware=json_aware, near_dedup=near_dedup)
     t0 = time.perf_counter()
     result, stats = ac.compress(messages=msgs, keep_ratio=keep_ratio)
     elapsed = (time.perf_counter() - t0) * 1000
@@ -295,6 +336,29 @@ def run_bench(msgs, name, runs=5):
         note = "Phase2路由 " + ",".join(route_info) if route_info else "Phase2路由"
         tests.append((key, avg_tok, avg_ms, note))
 
+    # ── 自适应方案 Phase 3（含JSON-aware + 近似去重）──
+    for level in ["moderate", "aggressive"]:
+        key = f"ADAPTIVE P3 {level.upper()}"
+        times = []
+        toks = []
+        stats_final = None
+        for _ in range(runs):
+            cm, stats, ms = run_adaptive(msgs, level, json_aware=True, near_dedup=True)
+            times.append(ms)
+            toks.append(msgs_tokens(cm))
+            stats_final = stats
+        avg_ms = sum(times) / runs
+        avg_tok = sum(toks) / runs
+        route_info = []
+        if stats_final.get("near_dedup_merged", 0) > 0:
+            route_info.append(f"去重:{stats_final['near_dedup_merged']}")
+        if stats_final.get("json_aware_used", 0) > 0:
+            route_info.append(f"JA:{stats_final['json_aware_used']}")
+        if stats_final.get("dialog_used_ic", 0) > 0:
+            route_info.append(f"IC:{stats_final['dialog_used_ic']}")
+        note = "Phase3 " + ",".join(route_info) if route_info else "Phase3"
+        tests.append((key, avg_tok, avg_ms, note))
+
     # ── 自适应方案 Phase 1（仅路由，无JSON-aware）──
     for level in ["moderate", "aggressive"]:
         key = f"ADAPTIVE P1 {level.upper()}"
@@ -358,26 +422,26 @@ def run_bench(msgs, name, runs=5):
         bar = "█" * bar_len
         print(f"  {name:<26} {tok:>6}   {saved_pct:>+5.1f}%  {ms:>6.1f}ms {note}  {bar}")
 
-    # ── Adaptive vs IC+CCR 对比 ──
+    # ── Phase 3 vs Phase 2 vs IC+CCR 对比 ──
     print(f"\n{'─'*85}")
-    print("🔍 Phase 2 (JSON-aware) vs Phase 1 vs IC+CCR 对比:")
+    print("🔍 Phase 3 (去重+JA+CCR) vs Phase 2 (JA+CCR) vs IC+CCR 对比:")
     for level in ["moderate", "aggressive"]:
         ic_key = f"IC+CCR {level.upper()}"
+        p3_key = f"ADAPTIVE P3 {level.upper()}"
         p2_key = f"ADAPTIVE P2 {level.upper()}"
-        p1_key = f"ADAPTIVE P1 {level.upper()}"
         ic_data = next((t for t in tests if t[0] == ic_key), None)
+        p3_data = next((t for t in tests if t[0] == p3_key), None)
         p2_data = next((t for t in tests if t[0] == p2_key), None)
-        p1_data = next((t for t in tests if t[0] == p1_key), None)
-        if ic_data and p2_data:
-            tok_pct = ((ic_data[1] - p2_data[1]) / max(1, ic_data[1])) * 100
-            ms_pct = ((ic_data[2] - p2_data[2]) / max(1, ic_data[2])) * 100
-            print(f"  P2 {level.upper()}: tokens {ic_data[1]}→{p2_data[1]} ({tok_pct:+.1f}%), "
-                  f"延迟 {ic_data[2]:.1f}→{p2_data[2]:.1f}ms ({ms_pct:+.1f}%)")
-        if p2_data and p1_data:
-            tok_pct = ((p1_data[1] - p2_data[1]) / max(1, p1_data[1])) * 100
-            ms_pct = ((p1_data[2] - p2_data[2]) / max(1, p1_data[2])) * 100
-            print(f"  P2 vs P1: tokens {p1_data[1]}→{p2_data[1]} ({tok_pct:+.1f}%), "
-                  f"延迟 {p1_data[2]:.1f}→{p2_data[2]:.1f}ms ({ms_pct:+.1f}%)")
+        if ic_data and p3_data:
+            tok_pct = ((ic_data[1] - p3_data[1]) / max(1, ic_data[1])) * 100
+            ms_pct = ((ic_data[2] - p3_data[2]) / max(1, ic_data[2])) * 100
+            print(f"  P3 {level.upper()}: tokens {ic_data[1]}→{p3_data[1]} ({tok_pct:+.1f}%), "
+                  f"延迟 {ic_data[2]:.1f}→{p3_data[2]:.1f}ms ({ms_pct:+.1f}%)")
+        if p3_data and p2_data:
+            tok_pct = ((p2_data[1] - p3_data[1]) / max(1, p2_data[1])) * 100
+            ms_pct = ((p2_data[2] - p3_data[2]) / max(1, p2_data[2])) * 100
+            print(f"  P3 vs P2: tokens {p2_data[1]}→{p3_data[1]} ({tok_pct:+.1f}%), "
+                  f"延迟 {p2_data[2]:.1f}→{p3_data[2]:.1f}ms ({ms_pct:+.1f}%)")
 
 
 def main():
@@ -389,6 +453,7 @@ def main():
     run_bench(scenario_short(), "短对话(5轮)", runs=5)
     run_bench(scenario_long(), "长对话(20轮)", runs=5)
     run_bench(scenario_json(), "JSON数据(50条)", runs=5)
+    run_bench(scenario_with_dedup(), "含近似副本对话(重复系统提示+工具调用)", runs=5)
 
     print(f"\n{'='*90}")
     print("📋 关键结论")
@@ -401,5 +466,22 @@ def main():
 """)
 
 
+def run_phase3_dedup_debug():
+    """调试去重效果"""
+    msgs = scenario_with_dedup()
+    dedup = NearDeduplicator(debug=True)
+    result, stats = dedup.deduplicate(msgs)
+    print(f"\n🔍 去重调试: {stats}")
+    for i, (orig, res) in enumerate(zip(msgs, result)):
+        oc = orig.get("content", "")
+        rc = res.get("content", "")
+        if oc != rc:
+            print(f"  msg[{i}] role={orig.get('role','')} {len(oc)}→{len(rc)} chars | {oc[:50]}... → {rc}")
+
+
 if __name__ == "__main__":
-    main()
+    import sys
+    if "--dedup-debug" in sys.argv:
+        run_phase3_dedup_debug()
+    else:
+        main()

@@ -16,6 +16,7 @@ from typing import Any
 from token_optimizer.core.signal_noise import InputCompressor, CompressionLevel
 from token_optimizer.core.compression_store import CompressionStore
 from token_optimizer.core.json_aware import JsonAwareCompressor
+from token_optimizer.core.near_dedup import NearDeduplicator
 
 
 class ContentType:
@@ -89,6 +90,7 @@ class AdaptiveCompressor:
         ccr_max_entries: int = 100,
         ccr_default_ttl: int = 600,
         json_aware: bool = True,
+        near_dedup: bool = True,
     ):
         self.level = level
         self.ic = InputCompressor(level=level)
@@ -96,6 +98,8 @@ class AdaptiveCompressor:
         self.ccr_default_ttl = ccr_default_ttl
         self.json_aware = json_aware
         self.json_compressor = JsonAwareCompressor() if json_aware else None
+        self.near_dedup = near_dedup
+        self.deduplicator = NearDeduplicator() if near_dedup else None
 
     def compress(
         self,
@@ -120,8 +124,16 @@ class AdaptiveCompressor:
             "dialog_used_ic": 0,
             "short_skipped": 0,
             "mixed_used_ic": 0,
+            "near_dedup_merged": 0,
+            "near_dedup_saved_chars": 0,
             "total_messages": len(messages),
         }
+
+        # Phase 3: 近似去重（在所有压缩之前）
+        if self.near_dedup and self.deduplicator:
+            messages, dedup_stats = self.deduplicator.deduplicate(messages)
+            stats["near_dedup_merged"] = dedup_stats.get("duplicates_found", 0)
+            stats["near_dedup_saved_chars"] = dedup_stats.get("saved_chars", 0)
 
         # 自适应路由：先分类，再按类型分组走不同管线
         dialog_msgs = []   # 需要走IC的消息索引
@@ -246,6 +258,8 @@ class AdaptiveCompressor:
 def _build_route_summary(stats: dict) -> str:
     """构建路由摘要字符串"""
     parts = []
+    if stats.get("near_dedup_merged", 0) > 0:
+        parts.append(f"去重:{stats['near_dedup_merged']}")
     if stats.get("json_skipped_ic", 0) > 0:
         ja = stats.get("json_aware_used", 0)
         if ja > 0:
