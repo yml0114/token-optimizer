@@ -1,0 +1,7 @@
+name: token-optimizer
+version: "2.0.0"
+description: "Smart token compression with auto model discovery and fallback chain. Saves 40-81% on long conversations."
+author: yml0114
+kind: standalone
+provides_hooks:
+  - llm_request
