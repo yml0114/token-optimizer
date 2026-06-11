@@ -11,6 +11,7 @@ sys.path.insert(0, "src")
 from token_optimizer.core.signal_noise import InputCompressor, CompressionLevel
 from token_optimizer.core.compression_store import CompressionStore
 from token_optimizer.core.adaptive_compressor import AdaptiveCompressor
+from token_optimizer.core.json_aware import JsonAwareCompressor
 
 try:
     import tiktoken
@@ -177,10 +178,10 @@ def run_input_plus_ccr(msgs, level_name, keep_ratio=0.4):
     elapsed = (time.perf_counter() - t0) * 1000
     return final, {"noise_pct": noise_meta.get("savings_pct", 0), "entries": len(store._store)}, elapsed
 
-def run_adaptive(msgs, level_name, keep_ratio=0.4):
-    """自适应压缩（新方案）"""
+def run_adaptive(msgs, level_name, keep_ratio=0.4, json_aware=True):
+    """自适应压缩（Phase 2: 含JSON-aware）"""
     level = CompressionLevel(level_name)
-    ac = AdaptiveCompressor(level=level)
+    ac = AdaptiveCompressor(level=level, json_aware=json_aware)
     t0 = time.perf_counter()
     result, stats = ac.compress(messages=msgs, keep_ratio=keep_ratio)
     elapsed = (time.perf_counter() - t0) * 1000
@@ -273,26 +274,46 @@ def run_bench(msgs, name, runs=5):
         avg_tok = sum(toks) / runs
         tests.append((key, avg_tok, avg_ms, f"去噪{meta.get('noise_pct',0):.1f}%+可逆"))
 
-    # ── 自适应方案 ──
+    # ── 自适应方案 Phase 2（含JSON-aware）──
     for level in ["moderate", "aggressive"]:
-        key = f"ADAPTIVE {level.upper()}"
+        key = f"ADAPTIVE P2 {level.upper()}"
         times = []
         toks = []
         stats_final = None
         for _ in range(runs):
-            cm, stats, ms = run_adaptive(msgs, level)
+            cm, stats, ms = run_adaptive(msgs, level, json_aware=True)
             times.append(ms)
             toks.append(msgs_tokens(cm))
             stats_final = stats
         avg_ms = sum(times) / runs
         avg_tok = sum(toks) / runs
-        # 构建备注
+        route_info = []
+        if stats_final.get("json_aware_used", 0) > 0:
+            route_info.append(f"JSON→JA:{stats_final['json_aware_used']}")
+        if stats_final.get("dialog_used_ic", 0) > 0:
+            route_info.append(f"对话走IC:{stats_final['dialog_used_ic']}")
+        note = "Phase2路由 " + ",".join(route_info) if route_info else "Phase2路由"
+        tests.append((key, avg_tok, avg_ms, note))
+
+    # ── 自适应方案 Phase 1（仅路由，无JSON-aware）──
+    for level in ["moderate", "aggressive"]:
+        key = f"ADAPTIVE P1 {level.upper()}"
+        times = []
+        toks = []
+        stats_final = None
+        for _ in range(runs):
+            cm, stats, ms = run_adaptive(msgs, level, json_aware=False)
+            times.append(ms)
+            toks.append(msgs_tokens(cm))
+            stats_final = stats
+        avg_ms = sum(times) / runs
+        avg_tok = sum(toks) / runs
         route_info = []
         if stats_final.get("json_skipped_ic", 0) > 0:
             route_info.append(f"JSON跳过IC:{stats_final['json_skipped_ic']}")
         if stats_final.get("dialog_used_ic", 0) > 0:
             route_info.append(f"对话走IC:{stats_final['dialog_used_ic']}")
-        note = "自适应路由 " + ",".join(route_info) if route_info else "自适应路由"
+        note = "Phase1路由 " + ",".join(route_info) if route_info else "Phase1路由"
         tests.append((key, avg_tok, avg_ms, note))
 
     # ── CCR Only ──
@@ -339,19 +360,24 @@ def run_bench(msgs, name, runs=5):
 
     # ── Adaptive vs IC+CCR 对比 ──
     print(f"\n{'─'*85}")
-    print("🔍 Adaptive vs IC+CCR 对比:")
+    print("🔍 Phase 2 (JSON-aware) vs Phase 1 vs IC+CCR 对比:")
     for level in ["moderate", "aggressive"]:
         ic_key = f"IC+CCR {level.upper()}"
-        ad_key = f"ADAPTIVE {level.upper()}"
+        p2_key = f"ADAPTIVE P2 {level.upper()}"
+        p1_key = f"ADAPTIVE P1 {level.upper()}"
         ic_data = next((t for t in tests if t[0] == ic_key), None)
-        ad_data = next((t for t in tests if t[0] == ad_key), None)
-        if ic_data and ad_data:
-            tok_diff = ic_data[1] - ad_data[1]
-            ms_diff = ic_data[2] - ad_data[2]
-            tok_pct = (tok_diff / max(1, ic_data[1])) * 100
-            ms_pct = (ms_diff / max(1, ic_data[2])) * 100
-            print(f"  {level.upper()}: tokens {ic_data[1]}→{ad_data[1]} ({tok_pct:+.1f}%), "
-                  f"延迟 {ic_data[2]:.1f}→{ad_data[2]:.1f}ms ({ms_pct:+.1f}%)")
+        p2_data = next((t for t in tests if t[0] == p2_key), None)
+        p1_data = next((t for t in tests if t[0] == p1_key), None)
+        if ic_data and p2_data:
+            tok_pct = ((ic_data[1] - p2_data[1]) / max(1, ic_data[1])) * 100
+            ms_pct = ((ic_data[2] - p2_data[2]) / max(1, ic_data[2])) * 100
+            print(f"  P2 {level.upper()}: tokens {ic_data[1]}→{p2_data[1]} ({tok_pct:+.1f}%), "
+                  f"延迟 {ic_data[2]:.1f}→{p2_data[2]:.1f}ms ({ms_pct:+.1f}%)")
+        if p2_data and p1_data:
+            tok_pct = ((p1_data[1] - p2_data[1]) / max(1, p1_data[1])) * 100
+            ms_pct = ((p1_data[2] - p2_data[2]) / max(1, p1_data[2])) * 100
+            print(f"  P2 vs P1: tokens {p1_data[1]}→{p2_data[1]} ({tok_pct:+.1f}%), "
+                  f"延迟 {p1_data[2]:.1f}→{p2_data[2]:.1f}ms ({ms_pct:+.1f}%)")
 
 
 def main():

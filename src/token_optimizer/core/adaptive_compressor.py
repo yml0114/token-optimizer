@@ -15,6 +15,7 @@ from typing import Any
 
 from token_optimizer.core.signal_noise import InputCompressor, CompressionLevel
 from token_optimizer.core.compression_store import CompressionStore
+from token_optimizer.core.json_aware import JsonAwareCompressor
 
 
 class ContentType:
@@ -87,11 +88,14 @@ class AdaptiveCompressor:
         level: CompressionLevel = CompressionLevel.MODERATE,
         ccr_max_entries: int = 100,
         ccr_default_ttl: int = 600,
+        json_aware: bool = True,
     ):
         self.level = level
         self.ic = InputCompressor(level=level)
         self.ccr_max_entries = ccr_max_entries
         self.ccr_default_ttl = ccr_default_ttl
+        self.json_aware = json_aware
+        self.json_compressor = JsonAwareCompressor() if json_aware else None
 
     def compress(
         self,
@@ -179,16 +183,32 @@ class AdaptiveCompressor:
             else:
                 final[msg_idx] = msg
 
-        # JSON消息：跳过IC，原始内容直接进CCR
+        # JSON消息：跳过IC，走JSON-aware压缩或CCR
         for msg_idx in json_msgs:
             msg = messages[msg_idx]
             content = msg.get("content", "")
             if not content.strip():
                 final[msg_idx] = msg
                 continue
-            keep_len = max(1, int(len(content) * keep_ratio))
-            compressed_text = content[:keep_len]
-            hash_key, annotated = store.store(content, compressed_text)
+
+            if self.json_aware and self.json_compressor:
+                # Phase 2: JSON-aware预处理（键名缩写+数值截断），再进CCR全局压缩
+                json_compressed, json_meta = self.json_compressor.compress(content)
+                if not json_meta.get("skipped"):
+                    ja_saved = json_meta.get("savings_chars", 0)
+                    stats["json_aware_used"] = stats.get("json_aware_used", 0) + 1
+                    stats["json_aware_saved_chars"] = stats.get("json_aware_saved_chars", 0) + ja_saved
+                    # JsonAware结果送CCR做全局压缩（这才是压缩主力）
+                    content_to_ccr = json_compressed
+                else:
+                    content_to_ccr = content
+            else:
+                content_to_ccr = content
+
+            # CCR全局压缩
+            keep_len = max(1, int(len(content_to_ccr) * keep_ratio))
+            compressed_text = content_to_ccr[:keep_len]
+            hash_key, annotated = store.store(content_to_ccr, compressed_text)
             saved = len(content) - len(annotated)
             if saved > 0:
                 final[msg_idx] = {**msg, "content": annotated}
@@ -216,6 +236,24 @@ class AdaptiveCompressor:
             "savings_pct": round((1 - comp_tokens / max(1, orig_tokens)) * 100, 1),
             "ccr_entries": len(store._store),
             "saved_chars": total_saved,
+            "json_aware_used": stats.get("json_aware_used", 0),
+            "route_summary": _build_route_summary(stats),
         })
 
         return final, stats
+
+
+def _build_route_summary(stats: dict) -> str:
+    """构建路由摘要字符串"""
+    parts = []
+    if stats.get("json_skipped_ic", 0) > 0:
+        ja = stats.get("json_aware_used", 0)
+        if ja > 0:
+            parts.append(f"JSON→JA+CCR:{ja}")
+        else:
+            parts.append(f"JSON跳过IC:{stats['json_skipped_ic']}")
+    if stats.get("dialog_used_ic", 0) > 0:
+        parts.append(f"对话走IC:{stats['dialog_used_ic']}")
+    if stats.get("mixed_used_ic", 0) > 0:
+        parts.append(f"混合走IC:{stats['mixed_used_ic']}")
+    return ",".join(parts) if parts else "无压缩"
