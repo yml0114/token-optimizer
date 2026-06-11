@@ -3,10 +3,15 @@
 This module is the one-step integration surface for applications: shadow telemetry,
 rollout gating, provider probing, smart compression, safe fallback, HTTP request,
 and optimization metadata are handled behind a single OpenAI-compatible call.
+
+v2 Enhancement: Integrated CCR (Compression with Content Recall) from Headroom.
+When compression is applied, original content is stored in a CompressionStore
+so the downstream LLM can retrieve it on-demand via hash markers.
 """
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -14,6 +19,7 @@ from typing import Any, Literal
 import httpx
 
 from token_optimizer.config import OptimizerConfig
+from token_optimizer.core.compression_store import CompressionStore
 from token_optimizer.core.prompt_reorderer import compute_prefix_hash, reorder_messages, strip_dynamic_fields
 from token_optimizer.core.smart_compressor import SmartCompressor, estimate_tokens_from_messages
 from token_optimizer.models.model_config import estimate_cache_savings, get_model_profile
@@ -71,6 +77,9 @@ class ProductionOptimizerConfig:
     enable_model_probe: bool = True
     enable_prefix_reorder: bool = True
     enable_prefix_cache: bool = True
+    enable_ccr: bool = True
+    ccr_max_entries: int = 50
+    ccr_default_ttl: float = 300.0
     request_timeout: float = 120.0
     smart_min_rule_tokens: int = 128
     attach_metadata: bool = True
@@ -119,6 +128,11 @@ class ProductionOptimizer:
             enable_model_probe=self.config.enable_model_probe,
         )
         self._last_prefix_hash: str | None = None
+        # CCR: Compression with Content Recall
+        self.ccr_store = CompressionStore(
+            max_entries=self.config.ccr_max_entries,
+            default_ttl=self.config.ccr_default_ttl,
+        ) if self.config.enable_ccr else None
 
     def chat_completions_create(self, **kwargs: Any) -> dict[str, Any]:
         started = time.perf_counter()
@@ -155,9 +169,30 @@ class ProductionOptimizer:
         optimization["rollout_gate"] = gate
 
         l1_meta: dict[str, Any] = {"mode": "not_run"}
+        ccr_meta: dict[str, Any] = {"enabled": self.config.enable_ccr}
+
+        # CCR: Store original content before compression
+        ccr_stored_hashes: list[str] = []
+        if self.ccr_store and gate.get("enabled", False):
+            for msg in cleaned:
+                content = msg.get("content", "")
+                if isinstance(content, str) and len(content) > 50:
+                    # Only store meaningful content (not tiny fragments)
+                    hash_key, _ = self.ccr_store.store(
+                        original_text=content,
+                        compressed_text=content,  # will be updated after compression
+                    )
+                    ccr_stored_hashes.append(hash_key)
+            ccr_meta["stored_count"] = len(ccr_stored_hashes)
+
         if gate["enabled"]:
             try:
                 optimized_messages, l1_meta = self.smart.compress(cleaned, system_text=system_text)
+                # CCR: Annotate compressed messages with retrieval markers
+                if self.ccr_store and ccr_stored_hashes:
+                    optimized_messages = self._ccr_annotate(
+                        optimized_messages, cleaned, ccr_stored_hashes
+                    )
             except Exception as e:
                 optimized_messages = cleaned
                 l1_meta = {"mode": "safe_passthrough_repair", "reason": f"smart_compress_exception: {str(e)[:160]}"}
@@ -220,6 +255,7 @@ class ProductionOptimizer:
             "cache_stable": cache_stable,
             "cache_savings_estimate": cache_savings,
             "final_path": "smart" if l1_meta.get("mode") == "smart" else "rule_or_passthrough",
+            "ccr": ccr_meta,
         })
         if self.config.attach_metadata:
             response["_optimization"] = optimization
@@ -237,3 +273,62 @@ class ProductionOptimizer:
             response = client.post("/chat/completions", json=payload)
             response.raise_for_status()
             return response.json()
+
+    def _ccr_annotate(
+        self,
+        compressed_messages: list[dict[str, Any]],
+        original_messages: list[dict[str, Any]],
+        stored_hashes: list[str],
+    ) -> list[dict[str, Any]]:
+        """Annotate compressed messages with CCR retrieval markers.
+
+        For each compressed message that has a corresponding original in the
+        store, append a retrieval marker so the LLM can recall the original
+        content if needed.
+
+        Args:
+            compressed_messages: Messages after compression.
+            original_messages: Messages before compression (for hash matching).
+            stored_hashes: List of hash keys stored in the CCR store.
+
+        Returns:
+            Annotated compressed messages with retrieval markers.
+        """
+        if not self.ccr_store or not stored_hashes:
+            return compressed_messages
+
+        result = []
+        hash_idx = 0
+        for msg in compressed_messages:
+            content = msg.get("content", "")
+            if isinstance(content, str) and hash_idx < len(stored_hashes):
+                hash_key = stored_hashes[hash_idx]
+                if self.ccr_store.has(hash_key):
+                    marker = f" [TO:retrieve hash={hash_key}]"
+                    if marker not in content:
+                        new_msg = {**msg, "content": content + marker}
+                        result.append(new_msg)
+                    else:
+                        result.append(msg)
+                else:
+                    result.append(msg)
+                hash_idx += 1
+            else:
+                result.append(msg)
+        return result
+
+    def ccr_retrieve(self, hash_key: str) -> str | None:
+        """Retrieve original content by CCR hash key.
+
+        This is the public API for LLMs (or tool-call handlers) to retrieve
+        the original content when they see a [TO:retrieve hash=xxx] marker.
+
+        Args:
+            hash_key: The 12-char hex hash from the retrieval marker.
+
+        Returns:
+            Original text if found, None otherwise.
+        """
+        if not self.ccr_store:
+            return None
+        return self.ccr_store.retrieve(hash_key)

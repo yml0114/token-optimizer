@@ -1510,3 +1510,395 @@ class SmartCompressor:
         if not any(m.get("role") == "user" for m in compressed):
             return False
         return True
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# StatisticalAnalyzer (Headroom SmartCrusher)
+# ══════════════════════════════════════════════════════════════════════════════
+
+import csv
+import io
+import statistics
+from enum import Enum
+
+
+class FieldType(Enum):
+    """Inferred field semantic type from statistical analysis."""
+    ID = "id"                 # High uniqueness (>0.9), preserve but can compress format
+    SCORE = "score"           # Bounded numeric (0-100, 0-1, etc.)
+    TEMPORAL = "temporal"     # Time/date related
+    ERROR = "error"           # Error keywords detected — NEVER discard
+    TEXT = "text"             # General text content
+    NUMERIC = "numeric"       # General numeric
+    BOOLEAN = "boolean"       # True/false values
+    LIST = "list"             # Array/sequence of values
+    UNKNOWN = "unknown"
+
+
+class FieldAnalysis:
+    """Analysis result for a single field or value collection."""
+
+    def __init__(
+        self,
+        field_type: FieldType,
+        confidence: float,
+        uniqueness: float = 0.0,
+        is_anomaly: bool = False,
+        is_protected: bool = False,
+        compression_hint: str = "",
+    ):
+        self.field_type = field_type
+        self.confidence = confidence
+        self.uniqueness = uniqueness
+        self.is_anomaly = is_anomaly
+        self.is_protected = is_protected
+        self.compression_hint = compression_hint
+
+    def __repr__(self) -> str:
+        return (
+            f"FieldAnalysis(type={self.field_type.value}, conf={self.confidence:.2f}, "
+            f"unique={self.uniqueness:.2f}, anomaly={self.is_anomaly}, "
+            f"protected={self.is_protected}, hint={self.compression_hint!r})"
+        )
+
+
+# Error keywords that mark content as protected (never discard)
+ERROR_KEYWORDS = frozenset({
+    "error", "exception", "traceback", "fatal", "critical", "panic",
+    "failure", "crash", "segfault", "oom", "timeout", "refused",
+    "denied", "forbidden", "unauthorized", "not found", "500", "502",
+    "503", "404", "401", "403", "错误", "异常", "失败", "崩溃",
+    "超时", "拒绝", "未找到", "权限",
+})
+
+# Score range patterns: values commonly between 0-100 or 0-1
+_SCORE_PATTERNS = [
+    re.compile(r'\b(?:score|rating|confidence|accuracy|precision|recall|f1|auc)\s*[:=]\s*[\d.]+', re.I),
+    re.compile(r'\b\d+(?:\.\d+)?%'),  # percentages
+]
+
+
+class StatisticalAnalyzer:
+    """Headroom SmartCrusher: infer field semantics from statistical distributions.
+
+    Instead of relying on field names to determine how to compress, this analyzer
+    examines the actual data distribution to infer what type of content a field
+    contains, enabling smarter compression decisions.
+
+    Key capabilities:
+    1. Field type inference from data distribution
+    2. Anomaly detection (>2σ outliers auto-preserved)
+    3. Array first/last preservation
+    4. Lossless-first: try CSV+Schema compression first, use if ≥30% savings
+    """
+
+    def __init__(self, anomaly_sigma: float = 2.0):
+        """
+        Args:
+            anomaly_sigma: Number of standard deviations for anomaly detection.
+        """
+        self.anomaly_sigma = anomaly_sigma
+
+    def analyze_values(self, values: list[Any]) -> FieldAnalysis:
+        """Analyze a collection of values to infer field type and properties.
+
+        Args:
+            values: List of values to analyze.
+
+        Returns:
+            FieldAnalysis with inferred type and compression hints.
+        """
+        if not values:
+            return FieldAnalysis(FieldType.UNKNOWN, confidence=0.0)
+
+        str_values = [str(v) for v in values]
+        unique_ratio = len(set(str_values)) / len(str_values)
+
+        # Check for error content (MUST be protected)
+        for sv in str_values:
+            lower = sv.lower()
+            if any(kw in lower for kw in ERROR_KEYWORDS):
+                return FieldAnalysis(
+                    FieldType.ERROR,
+                    confidence=0.95,
+                    uniqueness=unique_ratio,
+                    is_protected=True,
+                    compression_hint="error_content_never_discard",
+                )
+
+        # High uniqueness → ID field
+        if unique_ratio > 0.9 and len(values) > 3:
+            return FieldAnalysis(
+                FieldType.ID,
+                confidence=0.9,
+                uniqueness=unique_ratio,
+                compression_hint="id_field_compress_format",
+            )
+
+        # Check for numeric values
+        numeric_values = []
+        for v in values:
+            try:
+                numeric_values.append(float(v))
+            except (ValueError, TypeError):
+                pass
+
+        if len(numeric_values) > len(values) * 0.7:
+            return self._analyze_numeric(numeric_values, str_values, unique_ratio)
+
+        # Check for temporal patterns
+        if self._has_temporal_pattern(str_values):
+            return FieldAnalysis(
+                FieldType.TEMPORAL,
+                confidence=0.85,
+                uniqueness=unique_ratio,
+                compression_hint="temporal_can_normalize",
+            )
+
+        # Check for boolean-like values
+        bool_values = {'true', 'false', '1', '0', 'yes', 'no', '是', '否'}
+        lower_set = {sv.lower().strip() for sv in str_values}
+        if lower_set.issubset(bool_values):
+            return FieldAnalysis(
+                FieldType.BOOLEAN,
+                confidence=0.9,
+                uniqueness=unique_ratio,
+                compression_hint="boolean_compress_to_short",
+            )
+
+        # Default: text
+        return FieldAnalysis(
+            FieldType.TEXT,
+            confidence=0.5,
+            uniqueness=unique_ratio,
+            compression_hint="text_standard_compress",
+        )
+
+    def _analyze_numeric(
+        self, numeric_values: list[float], str_values: list[str], unique_ratio: float
+    ) -> FieldAnalysis:
+        """Analyze numeric values for type inference."""
+        if len(numeric_values) < 2:
+            return FieldAnalysis(
+                FieldType.NUMERIC, confidence=0.6, uniqueness=unique_ratio,
+                compression_hint="numeric_few_values",
+            )
+
+        min_val = min(numeric_values)
+        max_val = max(numeric_values)
+
+        # Check for percentage/score (0-100 or 0-1)
+        if 0 <= min_val and max_val <= 100:
+            # Check if they look like percentages
+            has_pct = any('%' in sv for sv in str_values)
+            has_score_pattern = any(
+                p.search(' '.join(str_values[:10])) for p in _SCORE_PATTERNS
+            )
+            if has_pct or has_score_pattern or (0 <= min_val and max_val <= 1):
+                return FieldAnalysis(
+                    FieldType.SCORE,
+                    confidence=0.85,
+                    uniqueness=unique_ratio,
+                    compression_hint="score_field_round_or_compress",
+                )
+
+        # Check for anomaly
+        is_anomaly = False
+        try:
+            mean = statistics.mean(numeric_values)
+            stdev = statistics.stdev(numeric_values) if len(numeric_values) > 1 else 0
+            if stdev > 0:
+                # Check if any value deviates > anomaly_sigma from mean
+                for v in numeric_values:
+                    if abs(v - mean) > self.anomaly_sigma * stdev:
+                        is_anomaly = True
+                        break
+        except statistics.StatisticsError:
+            pass
+
+        return FieldAnalysis(
+            FieldType.NUMERIC,
+            confidence=0.8,
+            uniqueness=unique_ratio,
+            is_anomaly=is_anomaly,
+            compression_hint="numeric_standard_compress" + ("_has_anomaly" if is_anomaly else ""),
+        )
+
+    def _has_temporal_pattern(self, str_values: list[str]) -> bool:
+        """Check if values match common time/date patterns."""
+        temporal_patterns = [
+            re.compile(r'\d{4}-\d{2}-\d{2}'),
+            re.compile(r'\d{4}/\d{2}/\d{2}'),
+            re.compile(r'\d{2}:\d{2}:\d{2}'),
+            re.compile(r'\d{10,13}'),  # unix timestamps
+            re.compile(r'(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)', re.I),
+        ]
+        # Check at least 30% of values match temporal patterns
+        match_count = 0
+        sample = str_values[:min(20, len(str_values))]
+        for sv in sample:
+            if any(p.search(sv) for p in temporal_patterns):
+                match_count += 1
+        return match_count >= len(sample) * 0.3
+
+    def preserve_array_ends(self, arr: list[Any]) -> list[Any]:
+        """Preserve first and last elements of an array for context.
+
+        If array has ≤ 4 elements, return as-is.
+        If > 4 elements, return [first, second, '...(N-4 omitted)...', second_to_last, last].
+
+        Args:
+            arr: Input array/list.
+
+        Returns:
+            Condensed array preserving ends.
+        """
+        if len(arr) <= 4:
+            return arr
+
+        return [
+            arr[0],
+            arr[1],
+            f"...({len(arr) - 4} omitted)...",
+            arr[-2],
+            arr[-1],
+        ]
+
+    def try_lossless_csv_schema(
+        self, data: list[dict[str, Any]], min_savings_ratio: float = 0.30
+    ) -> tuple[str | None, dict]:
+        """Attempt lossless CSV+Schema compression.
+
+        If the data is a list of dicts with consistent keys, try to compress
+        it into a CSV representation + schema definition. If savings ≥ 30%,
+        return the compressed form.
+
+        Args:
+            data: List of dict records.
+            min_savings_ratio: Minimum savings ratio to accept (default 30%).
+
+        Returns:
+            Tuple of (compressed_string_or_None, metadata).
+            Returns None if savings are insufficient.
+        """
+        if not data or not isinstance(data[0], dict):
+            return None, {"reason": "not_list_of_dicts", "savings": 0}
+
+        # Get schema (all keys)
+        all_keys = set()
+        for record in data[:50]:  # sample first 50
+            all_keys.update(record.keys())
+
+        if not all_keys:
+            return None, {"reason": "no_keys", "savings": 0}
+
+        keys = sorted(all_keys)
+
+        # Build CSV
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(keys)
+        for record in data:
+            row = [record.get(k, '') for k in keys]
+            writer.writerow(row)
+
+        csv_text = output.getvalue()
+
+        # Schema definition (compact)
+        schema_parts = []
+        for key in keys:
+            sample_values = [str(record.get(key, '')) for record in data[:10]]
+            analysis = self.analyze_values(sample_values)
+            schema_parts.append(f"{key}:{analysis.field_type.value}")
+
+        schema_str = "SCHEMA[" + "|".join(schema_parts) + "]"
+        compressed = f"{schema_str}\n{csv_text}"
+
+        # Calculate savings
+        original_size = sum(len(json.dumps(r, ensure_ascii=False)) for r in data)
+        compressed_size = len(compressed)
+
+        if original_size == 0:
+            return None, {"reason": "empty_data", "savings": 0}
+
+        savings_ratio = 1.0 - (compressed_size / original_size)
+
+        meta = {
+            "original_size": original_size,
+            "compressed_size": compressed_size,
+            "savings_ratio": round(savings_ratio, 4),
+            "record_count": len(data),
+            "field_count": len(keys),
+            "schema": schema_str,
+        }
+
+        if savings_ratio >= min_savings_ratio:
+            return compressed, meta
+        return None, {"reason": "savings_below_threshold", **meta}
+
+    def analyze_and_compress_text(
+        self, text: str
+    ) -> tuple[str, list[FieldAnalysis]]:
+        """Full statistical analysis pipeline for a text block.
+
+        Parses the text for structured data (JSON), applies statistical
+        analysis, and returns optimized text with analysis metadata.
+
+        Args:
+            text: Input text that may contain JSON/structured data.
+
+        Returns:
+            Tuple of (optimized_text, field_analyses).
+        """
+        analyses: list[FieldAnalysis] = []
+
+        # Try to parse as JSON
+        try:
+            data = json.loads(text)
+        except (json.JSONDecodeError, TypeError):
+            # Not JSON — analyze as plain text
+            analysis = self.analyze_values([text])
+            analyses.append(analysis)
+            return text, analyses
+
+        # If it's a list of dicts, try CSV+Schema
+        if isinstance(data, list) and data and isinstance(data[0], dict):
+            compressed, meta = self.try_lossless_csv_schema(data)
+            if compressed is not None:
+                # Analyze each field
+                for key in sorted(data[0].keys()):
+                    values = [r.get(key) for r in data if key in r]
+                    analysis = self.analyze_values(values)
+                    analyses.append(analysis)
+                return compressed, analyses
+
+        # If it's a dict, analyze each top-level key
+        if isinstance(data, dict):
+            for key, value in data.items():
+                if isinstance(value, list):
+                    analysis = self.analyze_values(
+                        [str(v) for v in value[:50]]
+                    )
+                    # Mark as LIST type
+                    analysis.field_type = FieldType.LIST
+                elif isinstance(value, (int, float)):
+                    analysis = self.analyze_values([value])
+                else:
+                    analysis = self.analyze_values([str(value)])
+                analyses.append(analysis)
+
+        return text, analyses
+
+    def get_protected_values(self, analyses: list[FieldAnalysis]) -> list[str]:
+        """Extract compression hints for protected fields.
+
+        Args:
+            analyses: List of FieldAnalysis results.
+
+        Returns:
+            List of compression hints for fields that should be protected.
+        """
+        return [
+            a.compression_hint for a in analyses
+            if a.is_protected or a.is_anomaly
+        ]

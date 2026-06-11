@@ -25,6 +25,9 @@ Config via environment variables:
   TOKEN_OPTIMIZER_MIN_INPUT      — min tokens to trigger compression (default: 1000)
   TOKEN_OPTIMIZER_TARGET_RATIO   — target compression ratio (default: 0.35)
   TOKEN_OPTIMIZER_KEEP_RECENT    — recent messages to keep untouched (default: 4)
+  TOKEN_OPTIMIZER_SMART_MODELS   — comma-separated whitelist; only these models get LLM compression (empty = all)
+  TOKEN_OPTIMIZER_LLM_MIN_TOKENS — skip LLM compression if input below this (default: 1500)
+  TOKEN_OPTIMIZER_CACHE_MAX      — LRU cache max entries (default: 500)
 """
 
 from __future__ import annotations
@@ -64,6 +67,7 @@ CONCURRENT_TIMEOUT = _env_int("TOKEN_OPTIMIZER_CONCURRENT_TIMEOUT", 12)  # per-t
 CONCURRENT_TIER_SIZE = _env_int("TOKEN_OPTIMIZER_CONCURRENT_TIER_SIZE", 4)  # max candidates per tier race
 LLM_MIN_TOKENS = _env_int("TOKEN_OPTIMIZER_LLM_MIN_TOKENS", 1500)  # skip LLM if old msgs below this (avoid expansion)
 CACHE_MAX_SIZE = _env_int("TOKEN_OPTIMIZER_CACHE_MAX", 500)  # LRU cache max entries
+SMART_MODELS = {m.strip() for m in os.environ.get("TOKEN_OPTIMIZER_SMART_MODELS", "").split(",") if m.strip()}  # whitelist: only these models get LLM compression; empty = all models
 
 # ── Model-Aware Compression ─────────────────────────────────────────────────
 # Context window sizes for known models (tokens)
@@ -593,6 +597,20 @@ def compress_messages(
         result = system + rule_msgs + recent
         out_tok = estimate_messages_tokens(result)
         report |= {"output_tokens": out_tok, "mode": "rule_only_unprofitable", "ratio": out_tok / inp_tok, "context_tier": f"{tier_label}({ctx_window}tok,r{int(dyn_ratio*100)}%)", "target_model": target_model}
+        return result, report
+
+    # Step 4.5: Whitelist check — only validated models get LLM compression
+    if SMART_MODELS and target_model and target_model not in SMART_MODELS:
+        result = system + rule_msgs + recent
+        out_tok = estimate_messages_tokens(result)
+        report |= {
+            "output_tokens": out_tok,
+            "mode": "rule_only_not_whitelisted",
+            "ratio": out_tok / inp_tok,
+            "skip_llm": f"model '{target_model}' not in SMART_MODELS whitelist",
+            "context_tier": f"{tier_label}({ctx_window}tok,r{int(dyn_ratio*100)}%)",
+            "target_model": target_model,
+        }
         return result, report
 
     # Step 5: Skip LLM if old messages too short (avoid expansion)
