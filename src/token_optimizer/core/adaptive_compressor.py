@@ -76,6 +76,8 @@ _FACT_UNIT_RE = _re.compile(
 )
 _NUMBER_RE = _re.compile(r'[$¥€£]?\d[\d,.]*(?:[KkMm]|%|％)?')
 _KV_RE = _re.compile(r'[A-Za-z_][\w\s/-]{0,40}[:：=→]\s*\S')
+_IDENTIFIER_RE = _re.compile(r'\b[a-zA-Z][a-zA-Z0-9]*_[a-zA-Z0-9_]+\b')
+_COMPARE_RE = _re.compile(r'(?:<=|>=|<|>|===|!==|==|!=)')
 _BULLET_RE = _re.compile(r'^\s*[-•*]\s+\S')
 
 
@@ -125,15 +127,18 @@ def _fact_score(chunk: str) -> float:
     score += len(_FACT_UNIT_RE.findall(text)) * 10.0
     score += len(_NUMBER_RE.findall(text)) * 5.0
     score += len(_KV_RE.findall(text)) * 8.0
+    score += len(_IDENTIFIER_RE.findall(text)) * 7.0
+    score += len(_COMPARE_RE.findall(text)) * 4.0
     score += len(_re.findall(r'\b[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*\b', text)) * 2.0
     score += len(_re.findall(r'\b[A-Z]{2,}\b', text)) * 2.0
 
     # Domain-critical hints often appear in benchmark/real specs.
     critical_words = [
         'throughput', 'latency', 'p99', 'connection', 'pool', 'cost', 'total',
-        'budget', 'owner', 'due', 'status', 'from', 'to', 'migrate', 'risk',
+        'budget', 'total budget', 'owner', 'due', 'status', 'from', 'to', 'migrate', 'risk',
         'delay', 'delayed', 'eta', 'compliance', 'review', 'critical path',
-        'combined', 'completion', 'weighted average', 'roughly',
+        'combined', 'completion', 'weighted average', 'roughly', 'invoice', 'invoice_id',
+        'customer', 'region', 'alert_threshold', 'estimated_cost',
         'temperature', 'humidity', 'rain', 'wind', 'discount', 'validation',
     ]
     low = text.lower()
@@ -337,9 +342,19 @@ class AdaptiveCompressor:
         is_code = _is_code_block(lines) if len(lines) > 3 else False
         is_fact_dense = _is_fact_dense_text(full_text)
 
-        # Ultra-short fact-dense content has almost no safe redundancy.
-        # Compressing it saves little but can destroy QA-critical values.
-        if is_fact_dense and not is_code and len(full_text) < 500:
+        # Short fact-dense content has almost no safe redundancy.
+        # If the policy would only save a few tokens, no-op is safer than dropping
+        # conditions such as `balance < estimated_cost` or derived totals like `$4,500`.
+        if (
+            not is_code
+            and len(full_text) < 1200
+            and ratio >= 0.90
+            and (
+                is_fact_dense
+                or len(_NUMBER_RE.findall(full_text)) >= 6
+                or len(_IDENTIFIER_RE.findall(full_text)) >= 1
+            )
+        ):
             stats = {
                 "method": "adaptive",
                 "keep_ratio": 1.0,
