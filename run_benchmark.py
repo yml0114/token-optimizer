@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Benchmark: Headroom integration test v3."""
 import sys, os, json, time, statistics as st
-os.chdir('/Users/liangliang/.qwenpaw/workspaces/default/token-optimizer')
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, 'src')
 
 from token_optimizer.core.compression_store import CompressionStore

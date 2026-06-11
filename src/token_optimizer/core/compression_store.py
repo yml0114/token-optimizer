@@ -19,6 +19,7 @@ Storage design:
 from __future__ import annotations
 
 import hashlib
+import re
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
@@ -180,7 +181,6 @@ class CompressionStore:
         Returns:
             Hash key if found, None otherwise.
         """
-        import re
         match = re.search(r'\[TO:retrieve hash=([0-9a-f]{12})\]', text)
         return match.group(1) if match else None
 
@@ -194,7 +194,6 @@ class CompressionStore:
         Returns:
             Tuple of (original_content, text_with_marker_removed).
         """
-        import re
         hash_key = self.extract_hash_from_marker(text)
         if hash_key is None:
             return None, text
