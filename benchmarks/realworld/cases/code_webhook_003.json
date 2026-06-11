@@ -1,0 +1,57 @@
+{
+  "id": "code_webhook_003",
+  "category": "code_review",
+  "title": "Webhook signature validation bug",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a senior security code reviewer."
+    },
+    {
+      "role": "user",
+      "content": "Review handleStripeWebhook. Bug: it trusts req.body.event_type before verifying stripe_signature. Required fix: compute HMAC-SHA256 over raw_body using STRIPE_WEBHOOK_SECRET, compare with timingSafeEqual, reject if timestamp skew > 300 seconds, and store event_id in webhook_events with unique constraint for idempotency. Retry should return 200 for duplicate event_id."
+    },
+    {
+      "role": "assistant",
+      "content": "Webhook bug: verify stripe_signature before event_type, HMAC raw_body with secret, timingSafeEqual, 300s skew, unique event_id idempotency, duplicate returns 200."
+    }
+  ],
+  "qa_groups": [
+    [
+      "handleStripeWebhook"
+    ],
+    [
+      "event_type"
+    ],
+    [
+      "stripe_signature"
+    ],
+    [
+      "HMAC-SHA256"
+    ],
+    [
+      "raw_body"
+    ],
+    [
+      "STRIPE_WEBHOOK_SECRET"
+    ],
+    [
+      "timingSafeEqual"
+    ],
+    [
+      "300 seconds"
+    ],
+    [
+      "event_id"
+    ],
+    [
+      "webhook_events"
+    ],
+    [
+      "unique constraint"
+    ],
+    [
+      "200"
+    ]
+  ]
+}

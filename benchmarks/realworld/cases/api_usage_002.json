@@ -1,0 +1,66 @@
+{
+  "id": "api_usage_002",
+  "category": "api_json",
+  "title": "Usage quota API response",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You parse usage API responses."
+    },
+    {
+      "role": "user",
+      "content": "Parse response: {\"workspace_id\":\"ws_8821\",\"plan\":\"growth\",\"quota\":{\"monthly_tokens\":420000,\"used_tokens\":398120,\"reset_at\":\"2026-07-01T00:00:00Z\"},\"limits\":{\"rpm_limit\":300,\"concurrent_jobs\":10},\"billing\":{\"overage_enabled\":true,\"unit_price\":0.40,\"currency\":\"USD\"}} Remember workspace, plan, quota, used tokens, reset, rpm, jobs, overage and unit price."
+    },
+    {
+      "role": "assistant",
+      "content": "Workspace ws_8821 on growth has 420k monthly tokens, 398120 used, reset July 1, rpm 300, jobs 10, overage true at $0.40 USD."
+    }
+  ],
+  "qa_groups": [
+    [
+      "ws_8821"
+    ],
+    [
+      "growth"
+    ],
+    [
+      "monthly_tokens"
+    ],
+    [
+      "420000"
+    ],
+    [
+      "used_tokens"
+    ],
+    [
+      "398120"
+    ],
+    [
+      "2026-07-01T00:00:00Z"
+    ],
+    [
+      "rpm_limit"
+    ],
+    [
+      "300"
+    ],
+    [
+      "concurrent_jobs"
+    ],
+    [
+      "10"
+    ],
+    [
+      "overage_enabled"
+    ],
+    [
+      "true"
+    ],
+    [
+      "0.40"
+    ],
+    [
+      "USD"
+    ]
+  ]
+}

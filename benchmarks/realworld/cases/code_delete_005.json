@@ -1,0 +1,63 @@
+{
+  "id": "code_delete_005",
+  "category": "code_review",
+  "title": "Project deletion transaction bug",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a senior code reviewer."
+    },
+    {
+      "role": "user",
+      "content": "Review deleteProject(projectId). It deletes project row before deleting tasks and files, causing foreign key errors. Required fix: wrap in db.transaction, soft delete project.deleted_at, mark tasks.status='archived', enqueue file_cleanup job with delay_seconds=300, and require confirmText exactly equals project.name. Also emit project_deleted audit event with actor_id."
+    },
+    {
+      "role": "assistant",
+      "content": "deleteProject order bug: use transaction, soft delete deleted_at, archive tasks, enqueue file_cleanup delay 300s, exact confirmText, audit project_deleted actor_id."
+    }
+  ],
+  "qa_groups": [
+    [
+      "deleteProject"
+    ],
+    [
+      "projectId"
+    ],
+    [
+      "foreign key"
+    ],
+    [
+      "db.transaction"
+    ],
+    [
+      "deleted_at"
+    ],
+    [
+      "tasks.status"
+    ],
+    [
+      "archived"
+    ],
+    [
+      "file_cleanup"
+    ],
+    [
+      "delay_seconds"
+    ],
+    [
+      "300"
+    ],
+    [
+      "confirmText"
+    ],
+    [
+      "project.name"
+    ],
+    [
+      "project_deleted"
+    ],
+    [
+      "actor_id"
+    ]
+  ]
+}

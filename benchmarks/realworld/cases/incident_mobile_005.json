@@ -1,0 +1,72 @@
+{
+  "id": "incident_mobile_005",
+  "category": "incident_postmortem",
+  "title": "Mobile streaming latency incident",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are an SRE assistant summarizing incidents."
+    },
+    {
+      "role": "user",
+      "content": "Incident INC-2026-0814-IOS affected zh-CN→en-US streaming. p95 latency jumped from 640ms to 2,850ms after release 6.4.1. Affected sessions: 12,088. Root cause: client disabled partial_flush and batched 12 chunks before rendering. Mitigation: hotfix 6.4.2 re-enabled partial_flush and reduced chunk_batch_size to 3. Owner: Ana Gomez. Follow-up due 2026-08-16: add synthetic test if p95_stream_latency > 900ms for 5 minutes."
+    },
+    {
+      "role": "assistant",
+      "content": "iOS streaming incident: 6.4.1 regression, p95 2,850ms, 12,088 sessions, partial_flush disabled, hotfix 6.4.2, Ana owner."
+    }
+  ],
+  "qa_groups": [
+    [
+      "INC-2026-0814-IOS"
+    ],
+    [
+      "zh-CN"
+    ],
+    [
+      "en-US"
+    ],
+    [
+      "640ms"
+    ],
+    [
+      "2,850ms",
+      "2850ms"
+    ],
+    [
+      "6.4.1"
+    ],
+    [
+      "12,088",
+      "12088"
+    ],
+    [
+      "partial_flush"
+    ],
+    [
+      "12 chunks"
+    ],
+    [
+      "6.4.2"
+    ],
+    [
+      "chunk_batch_size"
+    ],
+    [
+      "3"
+    ],
+    [
+      "Ana",
+      "Gomez"
+    ],
+    [
+      "2026-08-16"
+    ],
+    [
+      "900ms"
+    ],
+    [
+      "5 minutes"
+    ]
+  ]
+}

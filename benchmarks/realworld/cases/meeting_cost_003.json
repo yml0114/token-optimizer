@@ -1,0 +1,65 @@
+{
+  "id": "meeting_cost_003",
+  "category": "meeting_notes",
+  "title": "Infrastructure cost review",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You track project meeting notes."
+    },
+    {
+      "role": "user",
+      "content": "Cost review: Vector DB migration owner Helen due Aug 2, expected saving $1,200/month. Cache tier resize owner Omar due Jul 28, reduce Redis nodes from 9 to 6, risk: p99 may rise above 180ms. Log retention owner Zoe due Jul 25, change hot retention from 30 days to 14 days. Combined monthly saving target: $2,750. Do not change enterprise audit logs."
+    },
+    {
+      "role": "assistant",
+      "content": "Owners: Helen vector DB, Omar cache resize, Zoe log retention. Target saving $2,750/month; enterprise audit logs unchanged."
+    }
+  ],
+  "qa_groups": [
+    [
+      "Helen"
+    ],
+    [
+      "Aug 2"
+    ],
+    [
+      "1,200",
+      "1200"
+    ],
+    [
+      "Omar"
+    ],
+    [
+      "Jul 28"
+    ],
+    [
+      "9"
+    ],
+    [
+      "6"
+    ],
+    [
+      "180ms"
+    ],
+    [
+      "Zoe"
+    ],
+    [
+      "Jul 25"
+    ],
+    [
+      "30 days"
+    ],
+    [
+      "14 days"
+    ],
+    [
+      "2,750",
+      "2750"
+    ],
+    [
+      "enterprise audit logs"
+    ]
+  ]
+}

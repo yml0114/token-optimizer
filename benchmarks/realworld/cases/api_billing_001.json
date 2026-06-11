@@ -1,0 +1,75 @@
+{
+  "id": "api_billing_001",
+  "category": "api_json",
+  "title": "Nested billing API response",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You parse billing API responses."
+    },
+    {
+      "role": "user",
+      "content": "Parse response:\n{\n  \"invoice_id\": \"inv_20260611_8842\",\n  \"customer\": {\"id\": \"cus_7719\", \"tier\": \"pro\", \"region\": \"ap-southeast-1\"},\n  \"usage\": {\"input_tokens\": 1287340, \"output_tokens\": 348902, \"cache_hit_rate\": 0.742},\n  \"charges\": {\"model\": 18.42, \"storage\": 2.15, \"discount\": -3.20, \"total\": 17.37, \"currency\": \"USD\"},\n  \"limits\": {\"monthly_budget\": 250.00, \"alert_threshold\": 0.8}\n}\nNeed remember invoice, customer, region, cache hit, total charge, discount, and alert threshold."
+    },
+    {
+      "role": "assistant",
+      "content": "Invoice inv_20260611_8842, customer cus_7719 pro in ap-southeast-1. Cache hit 0.742, total $17.37 after -$3.20 discount, alert threshold 0.8 of $250 budget."
+    }
+  ],
+  "qa_groups": [
+    [
+      "inv_20260611_8842"
+    ],
+    [
+      "cus_7719"
+    ],
+    [
+      "pro"
+    ],
+    [
+      "ap-southeast-1"
+    ],
+    [
+      "1287340"
+    ],
+    [
+      "348902"
+    ],
+    [
+      "0.742"
+    ],
+    [
+      "18.42"
+    ],
+    [
+      "2.15"
+    ],
+    [
+      "-3.20"
+    ],
+    [
+      "17.37"
+    ],
+    [
+      "USD"
+    ],
+    [
+      "250.00",
+      "250"
+    ],
+    [
+      "0.8"
+    ]
+  ],
+  "must_keep": [
+    "invoice id",
+    "customer id",
+    "region",
+    "usage",
+    "charges",
+    "discount",
+    "budget",
+    "threshold"
+  ],
+  "notes": "Tests nested JSON, snake_case keys, negative amounts, currency, and thresholds."
+}

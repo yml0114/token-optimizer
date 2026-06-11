@@ -1,0 +1,63 @@
+{
+  "id": "code_export_004",
+  "category": "code_review",
+  "title": "Export endpoint data leak",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a senior security code reviewer."
+    },
+    {
+      "role": "user",
+      "content": "Review exportWorkspaceData. It allows any member to export all messages including private_notes. Bug: only workspace owner/admin should export, and private_notes must be excluded unless include_private=true and requester has compliance_officer role. Required: add export_jobs table, status queued/running/done, max 2 exports/day/workspace, redact api_key and access_token fields."
+    },
+    {
+      "role": "assistant",
+      "content": "Data leak: exportWorkspaceData permission too broad, private_notes special role, export_jobs states, 2/day/workspace, redact secrets."
+    }
+  ],
+  "qa_groups": [
+    [
+      "exportWorkspaceData"
+    ],
+    [
+      "private_notes"
+    ],
+    [
+      "owner"
+    ],
+    [
+      "admin"
+    ],
+    [
+      "include_private"
+    ],
+    [
+      "compliance_officer"
+    ],
+    [
+      "export_jobs"
+    ],
+    [
+      "queued"
+    ],
+    [
+      "running"
+    ],
+    [
+      "done"
+    ],
+    [
+      "2"
+    ],
+    [
+      "day"
+    ],
+    [
+      "api_key"
+    ],
+    [
+      "access_token"
+    ]
+  ]
+}

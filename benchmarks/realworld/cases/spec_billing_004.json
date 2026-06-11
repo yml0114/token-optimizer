@@ -1,0 +1,66 @@
+{
+  "id": "spec_billing_004",
+  "category": "technical_specs",
+  "title": "Billing ledger consistency spec",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You track technical specs."
+    },
+    {
+      "role": "user",
+      "content": "Billing ledger spec: every credit transaction has ledger_id ULID, user_id, delta_credits, balance_after, source enum [recharge, consume, refund, adjustment]. Invariant: balance_after >= 0. Idempotency key required for recharge and refund. Reconciliation job runs every 6 hours; mismatch threshold is 1 cent or 10 credits. Archive ledger rows after 7 years."
+    },
+    {
+      "role": "assistant",
+      "content": "Ledger spec includes ULID ledger_id, user_id, delta, balance_after nonnegative, source enum, idempotency for recharge/refund, reconciliation 6h, thresholds, archive 7y."
+    }
+  ],
+  "qa_groups": [
+    [
+      "ledger_id"
+    ],
+    [
+      "ULID"
+    ],
+    [
+      "user_id"
+    ],
+    [
+      "delta_credits"
+    ],
+    [
+      "balance_after"
+    ],
+    [
+      "recharge"
+    ],
+    [
+      "consume"
+    ],
+    [
+      "refund"
+    ],
+    [
+      "adjustment"
+    ],
+    [
+      ">= 0"
+    ],
+    [
+      "Idempotency"
+    ],
+    [
+      "6 hours"
+    ],
+    [
+      "1 cent"
+    ],
+    [
+      "10 credits"
+    ],
+    [
+      "7 years"
+    ]
+  ]
+}

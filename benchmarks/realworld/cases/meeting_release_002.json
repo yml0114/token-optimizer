@@ -1,0 +1,69 @@
+{
+  "id": "meeting_release_002",
+  "category": "meeting_notes",
+  "title": "Release readiness meeting",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You track project meeting notes."
+    },
+    {
+      "role": "user",
+      "content": "Release meeting: 1) iOS build owner Ana, deadline Jul 8, blocker: App Store privacy manifest. 2) Backend billing owner Ravi, deadline Jul 5, needs Stripe webhook replay test with 50 cases. 3) Docs owner Mei, deadline Jul 6, must update migration guide. Budget: iOS $3,200, backend $1,800, docs $600. Decision: launch only if crash_free_sessions >= 99.5% and webhook_success_rate >= 99.9%."
+    },
+    {
+      "role": "assistant",
+      "content": "Release readiness: Ana iOS Jul 8, Ravi billing Jul 5, Mei docs Jul 6. Budget total $5,600. Launch gates are crash-free and webhook success."
+    }
+  ],
+  "qa_groups": [
+    [
+      "Ana"
+    ],
+    [
+      "Jul 8"
+    ],
+    [
+      "privacy manifest"
+    ],
+    [
+      "Ravi"
+    ],
+    [
+      "Jul 5"
+    ],
+    [
+      "50 cases"
+    ],
+    [
+      "Mei"
+    ],
+    [
+      "Jul 6"
+    ],
+    [
+      "migration guide"
+    ],
+    [
+      "3,200",
+      "3200"
+    ],
+    [
+      "1,800",
+      "1800"
+    ],
+    [
+      "600"
+    ],
+    [
+      "5,600",
+      "5600"
+    ],
+    [
+      "99.5%"
+    ],
+    [
+      "99.9%"
+    ]
+  ]
+}

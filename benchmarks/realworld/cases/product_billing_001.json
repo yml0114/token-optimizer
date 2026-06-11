@@ -1,0 +1,70 @@
+{
+  "id": "product_billing_001",
+  "category": "product_requirements",
+  "title": "Taiyi v6.3 subscription billing rules",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a product requirements assistant."
+    },
+    {
+      "role": "user",
+      "content": "For Taiyi v6.3 billing, implement dual mode: monthly membership and pay-as-you-go credits. Membership price: ¥19.9/month, includes 35,000 credits. Extra credits: ¥10 buys 20,000 credits. Free users get 1,000 trial credits, expire in 7 days. Hard rule: never allow negative balance. If balance < estimated_cost, block execution before model call. Refund policy: failed model call refunds 100% credits within 3 seconds. Metrics: recharge conversion >= 8%, monthly churn <= 6%, gross margin target 70%."
+    },
+    {
+      "role": "assistant",
+      "content": "Captured billing rules: ¥19.9/month, 35k included, ¥10/20k extra, 1k trial credits, no negative balance, pre-call blocking, failed-call refund within 3 seconds."
+    }
+  ],
+  "qa_groups": [
+    [
+      "19.9"
+    ],
+    [
+      "35,000",
+      "35000"
+    ],
+    [
+      "10"
+    ],
+    [
+      "20,000",
+      "20000"
+    ],
+    [
+      "1,000",
+      "1000"
+    ],
+    [
+      "7 days"
+    ],
+    [
+      "negative"
+    ],
+    [
+      "estimated_cost"
+    ],
+    [
+      "3 seconds"
+    ],
+    [
+      "8%"
+    ],
+    [
+      "6%"
+    ],
+    [
+      "70%"
+    ]
+  ],
+  "must_keep": [
+    "membership price",
+    "extra credit price",
+    "trial credits",
+    "negative balance rule",
+    "pre-call blocking",
+    "refund timing",
+    "business metrics"
+  ],
+  "notes": "Tests billing numbers, snake_case identifiers, comparison conditions, and metrics."
+}

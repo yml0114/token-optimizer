@@ -1,0 +1,79 @@
+{
+  "id": "meeting_schedule_001",
+  "category": "meeting_notes",
+  "title": "Multi-project schedule meeting notes",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You track project meeting notes."
+    },
+    {
+      "role": "user",
+      "content": "Meeting notes: 1) Mnemos benchmark refresh: owner Liang, deadline Jun 18, target LongMemEval +15 points over v7.12 mock baseline. 2) Token Optimizer v3: owner Chen, deadline Jun 25, decision: do not add LLM dependency before real-world benchmark reaches 30 cases. 3) Unfaze iOS latency: owner Ana, deadline Jul 2, target p95 < 650ms for zh-CN→en-US streaming. Budget: Mnemos $1,200, Token Optimizer $900, Unfaze $2,400. Risk: App Store review may delay Unfaze by 5-7 days."
+    },
+    {
+      "role": "assistant",
+      "content": "Three tracks: Mnemos Jun 18 Liang, Token Optimizer Jun 25 Chen, Unfaze Jul 2 Ana. Total budget $4,500. Main risk: App Store review delay 5-7 days."
+    },
+    {
+      "role": "user",
+      "content": "Add dependency: Token Optimizer v3 benchmark must finish before semantic compressor design starts."
+    }
+  ],
+  "qa_groups": [
+    [
+      "Liang"
+    ],
+    [
+      "Jun 18"
+    ],
+    [
+      "15"
+    ],
+    [
+      "Chen"
+    ],
+    [
+      "Jun 25"
+    ],
+    [
+      "30 cases"
+    ],
+    [
+      "Ana"
+    ],
+    [
+      "Jul 2"
+    ],
+    [
+      "650ms"
+    ],
+    [
+      "900"
+    ],
+    [
+      "2,400",
+      "2400"
+    ],
+    [
+      "4,500",
+      "4500"
+    ],
+    [
+      "5-7 days"
+    ],
+    [
+      "semantic compressor"
+    ]
+  ],
+  "must_keep": [
+    "owners",
+    "deadlines",
+    "targets",
+    "budgets",
+    "total budget",
+    "risk",
+    "dependency"
+  ],
+  "notes": "Tests multi-owner schedules, budget totals, latency target, and dependency rules."
+}

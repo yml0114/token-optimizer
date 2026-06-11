@@ -1,0 +1,68 @@
+{
+  "id": "incident_payment_001",
+  "category": "incident_postmortem",
+  "title": "Payment path incident postmortem",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are an SRE assistant summarizing incidents."
+    },
+    {
+      "role": "user",
+      "content": "Incident INC-2026-0611-PAY started at 09:42 UTC. Checkout success rate dropped from 99.3% to 87.1%. Impact: 18,420 failed payments, estimated GMV loss $312,000. Root cause: Redis cluster shard-03 hit maxmemory after a Lua script leaked cart lock keys. Mitigation: flushed cart_lock:* keys, raised maxmemory from 48GB to 64GB, and disabled script version v17. Owner: Priya Nair. Follow-up due: 2026-06-14. Add alert if used_memory > 90% for 5 minutes."
+    },
+    {
+      "role": "assistant",
+      "content": "Noted: payment incident, Redis shard-03 memory leak, $312K GMV loss, Priya owner, follow-up 2026-06-14."
+    }
+  ],
+  "qa_groups": [
+    [
+      "INC-2026-0611-PAY"
+    ],
+    [
+      "09:42"
+    ],
+    [
+      "87.1%"
+    ],
+    [
+      "18,420",
+      "18420"
+    ],
+    [
+      "312,000",
+      "312K"
+    ],
+    [
+      "Redis",
+      "shard-03"
+    ],
+    [
+      "48GB"
+    ],
+    [
+      "64GB"
+    ],
+    [
+      "Priya",
+      "Nair"
+    ],
+    [
+      "2026-06-14"
+    ],
+    [
+      "90%",
+      "5 minutes"
+    ]
+  ],
+  "must_keep": [
+    "incident id",
+    "impact",
+    "root cause",
+    "mitigation",
+    "owner",
+    "follow-up"
+  ],
+  "notes": "Tests incident IDs, timestamps, impact metrics, memory values, owner, and alert thresholds."
+}

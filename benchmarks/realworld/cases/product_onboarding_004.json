@@ -1,0 +1,66 @@
+{
+  "id": "product_onboarding_004",
+  "category": "product_requirements",
+  "title": "Enterprise onboarding checklist",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a product requirements assistant."
+    },
+    {
+      "role": "user",
+      "content": "Enterprise onboarding flow: Step 1 collect company_domain and tax_id. Step 2 require admin_email verification within 48 hours. Step 3 enable SSO only if seat_count >= 20. Pricing: implementation fee $1,500, annual contract minimum $12,000. Security review must finish before workspace_activation. Metric targets: activation_rate >= 75%, median_time_to_value <= 2 days. Owner: Nora Li."
+    },
+    {
+      "role": "assistant",
+      "content": "Enterprise onboarding has domain/tax collection, admin verification, SSO seat threshold, fees, security review before activation, metrics, Nora owner."
+    }
+  ],
+  "qa_groups": [
+    [
+      "company_domain"
+    ],
+    [
+      "tax_id"
+    ],
+    [
+      "admin_email"
+    ],
+    [
+      "48 hours"
+    ],
+    [
+      "SSO"
+    ],
+    [
+      "seat_count"
+    ],
+    [
+      "20"
+    ],
+    [
+      "1,500",
+      "1500"
+    ],
+    [
+      "12,000",
+      "12000"
+    ],
+    [
+      "security review"
+    ],
+    [
+      "workspace_activation"
+    ],
+    [
+      "75%"
+    ],
+    [
+      "2 days"
+    ],
+    [
+      "Nora",
+      "Li"
+    ]
+  ]
+}

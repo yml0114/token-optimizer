@@ -1,0 +1,78 @@
+{
+  "id": "spec_api_005",
+  "category": "technical_specs",
+  "title": "Public API timeout and retry spec",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You track technical specs."
+    },
+    {
+      "role": "user",
+      "content": "Public API spec: default timeout 30s, max timeout 120s for enterprise. Retry policy: 429 and 503 retry with exponential backoff base_delay_ms=250, max_delay_ms=4000, max_attempts=4. Do not retry 400, 401, 403. Rate limit headers: X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset. SDK version minimum 1.8.0."
+    },
+    {
+      "role": "assistant",
+      "content": "API spec: timeout 30s/120s enterprise, retry 429/503 with backoff 250-4000ms max 4, no retry 400/401/403, rate limit headers, SDK min 1.8.0."
+    }
+  ],
+  "qa_groups": [
+    [
+      "30s"
+    ],
+    [
+      "120s"
+    ],
+    [
+      "enterprise"
+    ],
+    [
+      "429"
+    ],
+    [
+      "503"
+    ],
+    [
+      "exponential backoff"
+    ],
+    [
+      "base_delay_ms"
+    ],
+    [
+      "250"
+    ],
+    [
+      "max_delay_ms"
+    ],
+    [
+      "4000"
+    ],
+    [
+      "max_attempts"
+    ],
+    [
+      "4"
+    ],
+    [
+      "400"
+    ],
+    [
+      "401"
+    ],
+    [
+      "403"
+    ],
+    [
+      "X-RateLimit-Limit"
+    ],
+    [
+      "X-RateLimit-Remaining"
+    ],
+    [
+      "X-RateLimit-Reset"
+    ],
+    [
+      "1.8.0"
+    ]
+  ]
+}

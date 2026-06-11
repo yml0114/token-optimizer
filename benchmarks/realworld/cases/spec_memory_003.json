@@ -1,0 +1,60 @@
+{
+  "id": "spec_memory_003",
+  "category": "technical_specs",
+  "title": "Memory engine storage spec",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You track technical specs."
+    },
+    {
+      "role": "user",
+      "content": "Memory storage spec: SQLite WAL mode enabled, max db size 2GB per user, embedding dimension 384, HNSW ef_search=64, sync interval 15 minutes. Retention: raw events 30 days, distilled memories 365 days. Export format JSONL gzip. Encryption: AES-256-GCM with key rotation every 90 days."
+    },
+    {
+      "role": "assistant",
+      "content": "Memory spec: SQLite WAL, 2GB/user, dim 384, ef_search 64, sync 15m, raw 30d, distilled 365d, JSONL gzip, AES-256-GCM rotation 90d."
+    }
+  ],
+  "qa_groups": [
+    [
+      "SQLite"
+    ],
+    [
+      "WAL"
+    ],
+    [
+      "2GB"
+    ],
+    [
+      "384"
+    ],
+    [
+      "ef_search"
+    ],
+    [
+      "64"
+    ],
+    [
+      "15 minutes"
+    ],
+    [
+      "30 days"
+    ],
+    [
+      "365 days"
+    ],
+    [
+      "JSONL"
+    ],
+    [
+      "gzip"
+    ],
+    [
+      "AES-256-GCM"
+    ],
+    [
+      "90 days"
+    ]
+  ]
+}

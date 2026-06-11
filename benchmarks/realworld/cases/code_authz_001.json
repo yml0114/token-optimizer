@@ -1,0 +1,58 @@
+{
+  "id": "code_authz_001",
+  "category": "code_review",
+  "title": "Workspace deletion authorization bug",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a senior security code reviewer."
+    },
+    {
+      "role": "user",
+      "content": "Review this patch:\n```ts\nexport async function deleteWorkspace(req, res) {\n  const workspaceId = req.params.id\n  const userId = req.user.id\n  const workspace = await db.workspace.findUnique({ where: { id: workspaceId } })\n  if (!workspace) return res.status(404).json({ error: 'not found' })\n  await db.workspace.delete({ where: { id: workspaceId } })\n  audit.log('workspace_deleted', { workspaceId, userId })\n  return res.json({ ok: true })\n}\n```\nBug: it never checks whether userId is owner/admin of workspace. Also no soft delete, no 2FA confirmation for enterprise workspaces, and no rate limit. Required fix: check membership role in ['owner','admin'], require `confirmToken` if plan === 'enterprise', use deleted_at instead of hard delete, and rate limit 3 deletes/hour/user."
+    },
+    {
+      "role": "assistant",
+      "content": "Critical authz bug: deleteWorkspace lacks owner/admin check. Need confirmToken for enterprise, soft delete via deleted_at, and 3 deletes/hour/user limit."
+    }
+  ],
+  "qa_groups": [
+    [
+      "deleteWorkspace"
+    ],
+    [
+      "owner"
+    ],
+    [
+      "admin"
+    ],
+    [
+      "confirmToken"
+    ],
+    [
+      "enterprise"
+    ],
+    [
+      "deleted_at"
+    ],
+    [
+      "3",
+      "hour"
+    ],
+    [
+      "hard delete"
+    ],
+    [
+      "rate limit"
+    ]
+  ],
+  "must_keep": [
+    "function name",
+    "authorization bug",
+    "required roles",
+    "enterprise confirmation",
+    "soft delete",
+    "rate limit"
+  ],
+  "notes": "Tests code review facts, authz roles, identifiers, and required remediation."
+}

@@ -1,0 +1,63 @@
+{
+  "id": "api_latency_005",
+  "category": "api_json",
+  "title": "Latency metrics API response",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You parse metrics API responses."
+    },
+    {
+      "role": "user",
+      "content": "Metrics payload: {\"service\":\"translate-stream\",\"region\":\"ap-northeast-1\",\"window\":\"5m\",\"latency\":{\"p50_ms\":210,\"p95_ms\":920,\"p99_ms\":1840},\"errors\":{\"rate\":0.018,\"count\":77},\"slo\":{\"p95_target_ms\":900,\"error_budget_remaining\":0.42}} Preserve service, region, window, latency percentiles, errors and SLO."
+    },
+    {
+      "role": "assistant",
+      "content": "translate-stream ap-northeast-1 5m: p50 210ms, p95 920ms, p99 1840ms, error rate 0.018 count 77, p95 target 900ms, budget 0.42."
+    }
+  ],
+  "qa_groups": [
+    [
+      "translate-stream"
+    ],
+    [
+      "ap-northeast-1"
+    ],
+    [
+      "5m"
+    ],
+    [
+      "p50_ms"
+    ],
+    [
+      "210"
+    ],
+    [
+      "p95_ms"
+    ],
+    [
+      "920"
+    ],
+    [
+      "p99_ms"
+    ],
+    [
+      "1840"
+    ],
+    [
+      "0.018"
+    ],
+    [
+      "77"
+    ],
+    [
+      "p95_target_ms"
+    ],
+    [
+      "900"
+    ],
+    [
+      "0.42"
+    ]
+  ]
+}

@@ -1,0 +1,68 @@
+{
+  "id": "incident_search_003",
+  "category": "incident_postmortem",
+  "title": "Search indexing lag incident",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are an SRE assistant summarizing incidents."
+    },
+    {
+      "role": "user",
+      "content": "Incident INC-2026-0720-SEARCH began at 03:18 UTC. Search indexing lag increased from 4 minutes to 96 minutes. Impact: 8,700 documents missing from fresh results. Root cause: Kafka consumer group search-indexer-v2 stuck after partition 17 rebalance. Mitigation: restarted consumer group, reset offset for partition 17 to 88422190, and raised max_poll_interval_ms to 600000. Owner: Omar Patel. Follow-up due 2026-07-22: alert when lag_minutes > 15 for 10 minutes."
+    },
+    {
+      "role": "assistant",
+      "content": "Search incident: indexing lag 96m, 8.7k docs affected, consumer rebalance partition 17, offset reset, Omar owner."
+    }
+  ],
+  "qa_groups": [
+    [
+      "INC-2026-0720-SEARCH"
+    ],
+    [
+      "03:18"
+    ],
+    [
+      "4 minutes"
+    ],
+    [
+      "96 minutes"
+    ],
+    [
+      "8,700",
+      "8700"
+    ],
+    [
+      "Kafka"
+    ],
+    [
+      "search-indexer-v2"
+    ],
+    [
+      "partition 17"
+    ],
+    [
+      "88422190"
+    ],
+    [
+      "max_poll_interval_ms"
+    ],
+    [
+      "600000"
+    ],
+    [
+      "Omar",
+      "Patel"
+    ],
+    [
+      "2026-07-22"
+    ],
+    [
+      "15"
+    ],
+    [
+      "10 minutes"
+    ]
+  ]
+}

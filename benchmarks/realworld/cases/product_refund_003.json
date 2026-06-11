@@ -1,0 +1,73 @@
+{
+  "id": "product_refund_003",
+  "category": "product_requirements",
+  "title": "Refund and abuse-control policy",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a product requirements assistant."
+    },
+    {
+      "role": "user",
+      "content": "Refund policy v1: refund 100% credits if provider_error=true and request_id exists in audit log. Refund 50% if latency_ms > 120000 and output_tokens < 200. No refund if user_cancelled=true after model_started_at. Abuse guard: if refund_count >= 3 within 24 hours, require support_review. SLA: refund job p95 < 8 seconds. Owner: Diego Ramos. Launch gate: error budget < 0.5%."
+    },
+    {
+      "role": "assistant",
+      "content": "Refund rules recorded: full provider error refund, half refund for >120s latency with tiny output, no refund after model start cancellation, abuse guard at 3 refunds/24h, p95 <8s."
+    }
+  ],
+  "qa_groups": [
+    [
+      "provider_error"
+    ],
+    [
+      "request_id"
+    ],
+    [
+      "audit log"
+    ],
+    [
+      "50%"
+    ],
+    [
+      "latency_ms"
+    ],
+    [
+      "120000"
+    ],
+    [
+      "output_tokens"
+    ],
+    [
+      "200"
+    ],
+    [
+      "user_cancelled"
+    ],
+    [
+      "model_started_at"
+    ],
+    [
+      "refund_count"
+    ],
+    [
+      "3"
+    ],
+    [
+      "24 hours"
+    ],
+    [
+      "support_review"
+    ],
+    [
+      "8 seconds"
+    ],
+    [
+      "Diego",
+      "Ramos"
+    ],
+    [
+      "0.5%"
+    ]
+  ]
+}

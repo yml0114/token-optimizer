@@ -1,0 +1,74 @@
+{
+  "id": "incident_auth_002",
+  "category": "incident_postmortem",
+  "title": "Auth token cache incident",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are an SRE assistant summarizing incidents."
+    },
+    {
+      "role": "user",
+      "content": "Incident INC-2026-0712-AUTH started 14:06 UTC and recovered 14:41 UTC. Login error rate rose from 0.3% to 12.8%. Affected users: 31,204. Root cause: token cache TTL regression changed ttl_seconds from 900 to 90. Mitigation: rolled back auth-service build 2026.07.12.3 and warmed cache for tenant_ids 4421, 4422, 4427. Owner: Mei Zhang. Follow-up: add canary if login_error_rate > 2% for 3 minutes by 2026-07-15."
+    },
+    {
+      "role": "assistant",
+      "content": "Auth incident logged: INC id, 14:06-14:41, 12.8% error, TTL regression 900→90, rollback build, warm tenant cache, Mei owner."
+    }
+  ],
+  "qa_groups": [
+    [
+      "INC-2026-0712-AUTH"
+    ],
+    [
+      "14:06"
+    ],
+    [
+      "14:41"
+    ],
+    [
+      "0.3%"
+    ],
+    [
+      "12.8%"
+    ],
+    [
+      "31,204",
+      "31204"
+    ],
+    [
+      "ttl_seconds"
+    ],
+    [
+      "900"
+    ],
+    [
+      "90"
+    ],
+    [
+      "2026.07.12.3"
+    ],
+    [
+      "4421"
+    ],
+    [
+      "4422"
+    ],
+    [
+      "4427"
+    ],
+    [
+      "Mei",
+      "Zhang"
+    ],
+    [
+      "2%"
+    ],
+    [
+      "3 minutes"
+    ],
+    [
+      "2026-07-15"
+    ]
+  ]
+}

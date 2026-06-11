@@ -1,0 +1,57 @@
+{
+  "id": "code_role_002",
+  "category": "code_review",
+  "title": "Role update privilege escalation",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a senior security code reviewer."
+    },
+    {
+      "role": "user",
+      "content": "Review function updateUserRole(req,res). It reads targetUserId and newRole, then calls db.user.update without checking requester permissions. Bug: requester.role !== 'owner' should be rejected. Also disallow setting newRole='owner' unless requester.id equals org.created_by. Required: audit event role_changed, rate limit 5 changes/hour/org, and reject if targetUserId == requester.id. Current code returns 200 for all roles."
+    },
+    {
+      "role": "assistant",
+      "content": "Privilege escalation: updateUserRole lacks owner check, owner assignment creator-only, audit role_changed, rate limit 5/hour/org, reject self-change."
+    }
+  ],
+  "qa_groups": [
+    [
+      "updateUserRole"
+    ],
+    [
+      "targetUserId"
+    ],
+    [
+      "newRole"
+    ],
+    [
+      "requester.role"
+    ],
+    [
+      "owner"
+    ],
+    [
+      "requester.id"
+    ],
+    [
+      "org.created_by"
+    ],
+    [
+      "role_changed"
+    ],
+    [
+      "5"
+    ],
+    [
+      "hour"
+    ],
+    [
+      "targetUserId == requester.id"
+    ],
+    [
+      "200"
+    ]
+  ]
+}

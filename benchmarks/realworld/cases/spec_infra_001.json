@@ -1,0 +1,62 @@
+{
+  "id": "spec_infra_001",
+  "category": "technical_specs",
+  "title": "Web infrastructure capacity plan",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You track technical specs."
+    },
+    {
+      "role": "user",
+      "content": "Capacity plan: 6 web nodes, each 8 vCPU and 32GB RAM. 3 database nodes, each 16 vCPU and 64GB RAM. 4 cache nodes, each 8GB RAM. Peak throughput target 18,000 RPS. P99 latency target < 220ms. DB connection pool max 180 per app node. Monthly cost cap $9,600. Rollout starts 2026-07-09."
+    },
+    {
+      "role": "assistant",
+      "content": "Spec captured: web/db/cache sizing, 18k RPS, P99 <220ms, pool 180, cost cap $9,600, rollout July 9."
+    }
+  ],
+  "qa_groups": [
+    [
+      "6"
+    ],
+    [
+      "8 vCPU"
+    ],
+    [
+      "32GB"
+    ],
+    [
+      "3 database"
+    ],
+    [
+      "16 vCPU"
+    ],
+    [
+      "64GB"
+    ],
+    [
+      "4 cache"
+    ],
+    [
+      "8GB"
+    ],
+    [
+      "18,000",
+      "18000"
+    ],
+    [
+      "220ms"
+    ],
+    [
+      "180"
+    ],
+    [
+      "9,600",
+      "9600"
+    ],
+    [
+      "2026-07-09"
+    ]
+  ]
+}

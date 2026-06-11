@@ -1,0 +1,75 @@
+{
+  "id": "product_limits_005",
+  "category": "product_requirements",
+  "title": "API limit and downgrade rules",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a product requirements assistant."
+    },
+    {
+      "role": "user",
+      "content": "API limit rules: Starter has rpm_limit=60 and concurrent_jobs=2. Growth has rpm_limit=300 and concurrent_jobs=10. Enterprise custom default rpm_limit=2000. If payment_failed=true for 7 days, downgrade to read_only mode. If invoice_overdue_days >= 14, suspend new model calls but keep export_data enabled. Notify billing_owner at T+1, T+3, T+7. Goal: failed_payment_recovery >= 35%."
+    },
+    {
+      "role": "assistant",
+      "content": "Recorded plan limits, payment failure downgrade, overdue suspension while export_data stays enabled, billing owner notification schedule and recovery goal."
+    }
+  ],
+  "qa_groups": [
+    [
+      "rpm_limit"
+    ],
+    [
+      "60"
+    ],
+    [
+      "concurrent_jobs"
+    ],
+    [
+      "2"
+    ],
+    [
+      "300"
+    ],
+    [
+      "10"
+    ],
+    [
+      "2000"
+    ],
+    [
+      "payment_failed"
+    ],
+    [
+      "7 days"
+    ],
+    [
+      "read_only"
+    ],
+    [
+      "invoice_overdue_days"
+    ],
+    [
+      "14"
+    ],
+    [
+      "export_data"
+    ],
+    [
+      "billing_owner"
+    ],
+    [
+      "T+1"
+    ],
+    [
+      "T+3"
+    ],
+    [
+      "T+7"
+    ],
+    [
+      "35%"
+    ]
+  ]
+}

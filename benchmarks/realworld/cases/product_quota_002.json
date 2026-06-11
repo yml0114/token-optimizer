@@ -1,0 +1,73 @@
+{
+  "id": "product_quota_002",
+  "category": "product_requirements",
+  "title": "Team quota and risk review rules",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a product requirements assistant."
+    },
+    {
+      "role": "user",
+      "content": "For team workspace billing, Basic plan costs $29/month and includes 80,000 tokens. Pro plan costs $99/month and includes 420,000 tokens. If usage > monthly_quota, switch to pay_as_you_go at $0.40 per 10,000 tokens. If risk_score >= 0.85, require manual_review before charging. Failed webhook retries: 5 attempts over 30 minutes. KPI: trial_to_paid >= 12%, refund_rate <= 2.5%. Owner: Maya Singh."
+    },
+    {
+      "role": "assistant",
+      "content": "Captured: Basic $29/80k, Pro $99/420k, over-quota pay_as_you_go, risk_score >=0.85 requires manual_review, webhook retry policy, KPIs, Maya owner."
+    }
+  ],
+  "qa_groups": [
+    [
+      "29"
+    ],
+    [
+      "80,000",
+      "80000"
+    ],
+    [
+      "99"
+    ],
+    [
+      "420,000",
+      "420000"
+    ],
+    [
+      "monthly_quota"
+    ],
+    [
+      "pay_as_you_go"
+    ],
+    [
+      "0.40"
+    ],
+    [
+      "10,000",
+      "10000"
+    ],
+    [
+      "risk_score"
+    ],
+    [
+      "0.85"
+    ],
+    [
+      "manual_review"
+    ],
+    [
+      "5 attempts"
+    ],
+    [
+      "30 minutes"
+    ],
+    [
+      "12%"
+    ],
+    [
+      "2.5%"
+    ],
+    [
+      "Maya",
+      "Singh"
+    ]
+  ]
+}

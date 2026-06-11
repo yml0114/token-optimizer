@@ -1,0 +1,66 @@
+{
+  "id": "incident_billing_004",
+  "category": "incident_postmortem",
+  "title": "Billing double-charge incident",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are an SRE assistant summarizing incidents."
+    },
+    {
+      "role": "user",
+      "content": "Incident INC-2026-0801-BILL charged 2,319 invoices twice between 11:10 and 11:27 UTC. Overcharge amount: $48,620. Root cause: idempotency_key was omitted in retry path after gateway_timeout. Mitigation: paused invoice_worker, refunded duplicate charge_ids, deployed patch billing-api@4.8.2. Owner: Elena Cruz. Follow-up: add unique constraint on payment_attempt.external_id by 2026-08-03. Alert if duplicate_charge_count > 0."
+    },
+    {
+      "role": "assistant",
+      "content": "Billing double-charge incident: 2,319 invoices, $48,620 overcharge, missing idempotency_key in retry, patch 4.8.2, Elena owner."
+    }
+  ],
+  "qa_groups": [
+    [
+      "INC-2026-0801-BILL"
+    ],
+    [
+      "2,319",
+      "2319"
+    ],
+    [
+      "11:10"
+    ],
+    [
+      "11:27"
+    ],
+    [
+      "48,620",
+      "48620"
+    ],
+    [
+      "idempotency_key"
+    ],
+    [
+      "gateway_timeout"
+    ],
+    [
+      "invoice_worker"
+    ],
+    [
+      "charge_ids"
+    ],
+    [
+      "billing-api@4.8.2"
+    ],
+    [
+      "Elena",
+      "Cruz"
+    ],
+    [
+      "payment_attempt.external_id"
+    ],
+    [
+      "2026-08-03"
+    ],
+    [
+      "duplicate_charge_count"
+    ]
+  ]
+}

@@ -1,0 +1,60 @@
+{
+  "id": "api_risk_003",
+  "category": "api_json",
+  "title": "Risk scoring API response",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You parse risk API responses."
+    },
+    {
+      "role": "user",
+      "content": "Response: {\"request_id\":\"req_risk_4419\",\"user\":{\"id\":\"usr_2048\",\"country\":\"SG\"},\"risk\":{\"risk_score\":0.872,\"decision\":\"manual_review\",\"reasons\":[\"velocity_spike\",\"new_device\"]},\"thresholds\":{\"auto_approve\":0.35,\"manual_review\":0.85,\"block\":0.95}} Need preserve request, user, country, score, decision, reasons and thresholds."
+    },
+    {
+      "role": "assistant",
+      "content": "Risk req_risk_4419 for usr_2048 SG has risk_score 0.872, decision manual_review, reasons velocity_spike/new_device, thresholds 0.35/0.85/0.95."
+    }
+  ],
+  "qa_groups": [
+    [
+      "req_risk_4419"
+    ],
+    [
+      "usr_2048"
+    ],
+    [
+      "SG"
+    ],
+    [
+      "risk_score"
+    ],
+    [
+      "0.872"
+    ],
+    [
+      "manual_review"
+    ],
+    [
+      "velocity_spike"
+    ],
+    [
+      "new_device"
+    ],
+    [
+      "auto_approve"
+    ],
+    [
+      "0.35"
+    ],
+    [
+      "0.85"
+    ],
+    [
+      "block"
+    ],
+    [
+      "0.95"
+    ]
+  ]
+}

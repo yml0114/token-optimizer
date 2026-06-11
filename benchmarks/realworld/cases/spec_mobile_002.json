@@ -1,0 +1,54 @@
+{
+  "id": "spec_mobile_002",
+  "category": "technical_specs",
+  "title": "Mobile streaming performance spec",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You track technical specs."
+    },
+    {
+      "role": "user",
+      "content": "Mobile streaming spec: first_token_latency p50 <= 280ms, p95 <= 900ms. Chunk size target 24-48 characters. partial_flush must run every 120ms or 3 chunks, whichever comes first. Offline queue max 200 requests. Battery overhead must stay below 4%. Crash-free sessions >= 99.7%. Feature flag: streaming_v2_ios."
+    },
+    {
+      "role": "assistant",
+      "content": "Mobile streaming targets: first token p50/p95, chunk size, partial flush cadence, offline queue 200, battery <4%, crash-free 99.7%, flag streaming_v2_ios."
+    }
+  ],
+  "qa_groups": [
+    [
+      "first_token_latency"
+    ],
+    [
+      "280ms"
+    ],
+    [
+      "900ms"
+    ],
+    [
+      "24-48"
+    ],
+    [
+      "partial_flush"
+    ],
+    [
+      "120ms"
+    ],
+    [
+      "3 chunks"
+    ],
+    [
+      "200"
+    ],
+    [
+      "4%"
+    ],
+    [
+      "99.7%"
+    ],
+    [
+      "streaming_v2_ios"
+    ]
+  ]
+}

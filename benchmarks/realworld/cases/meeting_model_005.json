@@ -1,0 +1,64 @@
+{
+  "id": "meeting_model_005",
+  "category": "meeting_notes",
+  "title": "Model provider evaluation",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You track project meeting notes."
+    },
+    {
+      "role": "user",
+      "content": "Model eval notes: Provider A owner Lucas, finish eval by Jul 10, target cost <= $0.22 per 1M input tokens. Provider B owner Mira, finish by Jul 12, target p95 latency < 900ms. Provider C owner Chen, finish by Jul 15, must support tool_call_streaming=true. Decision: do not switch default provider until hallucination_rate < 1.2% on 500-case eval set. Budget cap $4,000."
+    },
+    {
+      "role": "assistant",
+      "content": "Provider eval: Lucas A Jul10 cost target, Mira B Jul12 latency target, Chen C Jul15 tool streaming. Switch only if hallucination <1.2% on 500 cases; cap $4,000."
+    }
+  ],
+  "qa_groups": [
+    [
+      "Lucas"
+    ],
+    [
+      "Jul 10"
+    ],
+    [
+      "0.22"
+    ],
+    [
+      "1M"
+    ],
+    [
+      "Mira"
+    ],
+    [
+      "Jul 12"
+    ],
+    [
+      "900ms"
+    ],
+    [
+      "Chen"
+    ],
+    [
+      "Jul 15"
+    ],
+    [
+      "tool_call_streaming"
+    ],
+    [
+      "hallucination_rate"
+    ],
+    [
+      "1.2%"
+    ],
+    [
+      "500-case"
+    ],
+    [
+      "4,000",
+      "4000"
+    ]
+  ]
+}

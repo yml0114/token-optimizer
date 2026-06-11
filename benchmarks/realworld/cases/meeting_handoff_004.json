@@ -1,0 +1,64 @@
+{
+  "id": "meeting_handoff_004",
+  "category": "meeting_notes",
+  "title": "Ownership handoff meeting",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You track project meeting notes."
+    },
+    {
+      "role": "user",
+      "content": "Handoff notes: Search relevance moves from Ivan to Priya on Jun 20. Payment reconciliation moves from Sara to Ken on Jun 22. Mobile crash triage stays with Ana until Jul 1. Dependency: reconciliation backfill must finish before finance dashboard QA. Backfill target: 2.4M rows, max mismatch_rate <= 0.03%. Budget remaining: $7,850. Risk: Ken is on leave Jun 24-26."
+    },
+    {
+      "role": "assistant",
+      "content": "Handoff captured: Ivan→Priya search, Sara→Ken reconciliation, Ana keeps crash triage. Backfill before finance QA, 2.4M rows, mismatch <=0.03%, $7,850 remaining."
+    }
+  ],
+  "qa_groups": [
+    [
+      "Ivan"
+    ],
+    [
+      "Priya"
+    ],
+    [
+      "Jun 20"
+    ],
+    [
+      "Sara"
+    ],
+    [
+      "Ken"
+    ],
+    [
+      "Jun 22"
+    ],
+    [
+      "Ana"
+    ],
+    [
+      "Jul 1"
+    ],
+    [
+      "finance dashboard QA"
+    ],
+    [
+      "2.4M"
+    ],
+    [
+      "mismatch_rate"
+    ],
+    [
+      "0.03%"
+    ],
+    [
+      "7,850",
+      "7850"
+    ],
+    [
+      "Jun 24-26"
+    ]
+  ]
+}

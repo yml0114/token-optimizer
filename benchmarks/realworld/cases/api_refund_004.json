@@ -1,0 +1,57 @@
+{
+  "id": "api_refund_004",
+  "category": "api_json",
+  "title": "Refund job API response",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You parse refund API responses."
+    },
+    {
+      "role": "user",
+      "content": "Parse: {\"refund_id\":\"rf_20260801_778\",\"charge_id\":\"ch_9901\",\"amount\":48.62,\"currency\":\"USD\",\"reason\":\"duplicate_charge\",\"status\":\"queued\",\"retry\":{\"attempt\":2,\"max_attempts\":5,\"next_retry_at\":\"2026-08-01T12:30:00Z\"},\"metadata\":{\"incident_id\":\"INC-2026-0801-BILL\"}} Remember refund, charge, amount, reason, status, retry and incident."
+    },
+    {
+      "role": "assistant",
+      "content": "Refund rf_20260801_778 for charge ch_9901 amount 48.62 USD, duplicate_charge, queued, attempt 2/5, next retry 12:30, incident INC-2026-0801-BILL."
+    }
+  ],
+  "qa_groups": [
+    [
+      "rf_20260801_778"
+    ],
+    [
+      "ch_9901"
+    ],
+    [
+      "48.62"
+    ],
+    [
+      "USD"
+    ],
+    [
+      "duplicate_charge"
+    ],
+    [
+      "queued"
+    ],
+    [
+      "attempt"
+    ],
+    [
+      "2"
+    ],
+    [
+      "max_attempts"
+    ],
+    [
+      "5"
+    ],
+    [
+      "2026-08-01T12:30:00Z"
+    ],
+    [
+      "INC-2026-0801-BILL"
+    ]
+  ]
+}
