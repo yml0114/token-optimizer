@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "token-optimizer"
-version = "0.2.0"
+version = "2.16.0"
 description = "Universal LLM Token Optimization Engine - Save 80-90% on API costs"
 readme = "README.md"
 license = "MIT"

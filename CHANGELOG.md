@@ -2,6 +2,187 @@
 
 All notable changes to Token Optimizer are documented here.
 
+---
+
+## [2.16.0] — 2026-06-12
+
+### Public API + Semantic Assertion Expansion
+
+#### Added
+
+- **Public compression API** — `compress_text()` stable entry point with three modes:
+  - `safe` (95% keep) — critical facts, memory, financial/legal/medical content.
+  - `balanced` (75% keep) — default factual compression.
+  - `aggressive` (50% keep) — low-risk text with higher loss tolerance.
+- **Public result types** — `CompressionResult`, `CompressionQuality`, `CompressionStats`.
+  - `miss_summary` with stable keys: `alias_gap`, `true_loss`, `assertion_gap`.
+- **API smoke/regression tests** — `tests/test_public_api.py` (5 tests).
+- **Semantic assertion adversarial cases** (4 new):
+  - `adv_assert_latest_021` — latest corrected value and stale-marker handling.
+  - `adv_assert_json_path_022` — nested JSON/path facts and invoice totals.
+  - `adv_assert_negation_023` — independent negative safety policies.
+  - `adv_assert_threshold_024` — dense threshold comparison conditions.
+- **Public API documentation** — `docs/public-api-v2.16.md`.
+
+#### Fixed
+
+- `AdaptiveCompressor` → `NearDeduplicator` constructor: stale `threshold=0.85` → `similarity_threshold=0.85`.
+
+#### Validation
+
+| Metric | Result |
+|---|---:|
+| Public API tests | 5/5 |
+| Adversarial benchmark | 24/24 cases, 205/205 QA, 100.0% |
+| Real-world benchmark | 421/421 QA |
+| Full pytest | passed |
+| Quality benchmark | no regression |
+| compileall | passed |
+
+---
+
+## [2.15.0] — 2026-06-11
+
+### Semantic Assertion Diagnostics
+
+#### Added
+
+- **Semantic assertion schema** — `qa_assertions` support for structured quality checks:
+  - Types: `present`, `any_of`, `all_of`, `latest_value`.
+  - Backward compatible with legacy `qa_groups` (auto-converted to `any_of`).
+- **Miss classification** — `miss_details` + `miss_summary` with three categories:
+  - `alias_gap` — fact may be preserved but evaluator alias matching insufficient.
+  - `true_loss` — genuine fact loss; the only category that should trigger compressor changes.
+  - `assertion_gap` — assertion schema or evaluator unable to express/parse the check.
+- **Adversarial assertion tests** — `tests/test_adversarial_assertions.py` (5 tests).
+- **Updated adversarial docs** — `docs/adversarial-benchmark-v1.md` rewritten for v2.15.
+- `.extreme_*.out` added to `.gitignore`.
+
+#### Validation
+
+| Metric | Result |
+|---|---:|
+| Evaluator tests | 11/11 |
+| Adversarial benchmark | 20/20 cases, 186/186 QA, 100.0% |
+| Real-world benchmark | 421/421 QA |
+| Miss classification | alias_gap=0, true_loss=0, assertion_gap=0 |
+
+---
+
+## [2.14.0] — 2026-06-11
+
+### Evaluator Alias Regression Tests
+
+#### Added
+
+- **Evaluator regression tests** — `tests/test_quality_benchmark_evaluator.py` (6 tests):
+  - `nine hundred` ↔ `900` normalization.
+  - `30 real-world cases` ↔ `30 cases` same-numbered-object matching.
+  - Unrelated facts remain AND; same-number different-object does not falsely merge.
+- **Parallel extreme verification** — all test suites run in parallel as smoke gate.
+
+#### Validation
+
+| Metric | Result |
+|---|---:|
+| Full pytest | 126/126 |
+| Adversarial benchmark | 186/186 QA, 100.0% |
+| Real-world benchmark | 421/421 QA |
+| Quality benchmark | no regression |
+| compileall | passed |
+
+---
+
+## [2.13.0] — 2026-06-11
+
+### Evaluator Alias Normalization
+
+#### Changed
+
+- `quality_benchmark.py` evaluator alias normalization:
+  - Extended `_normalize_number()` to handle English number words (`<number> hundred`).
+  - Added `_same_numbered_object()` for `30 real-world cases` ↔ `30 cases`.
+- Compressor unchanged — this release only improves evaluator accuracy.
+
+#### Validation
+
+| Metric | Result |
+|---|---:|
+| Adversarial benchmark | 186/186 QA, 100.0% |
+| Real-world benchmark | 421/421 QA |
+| Quality benchmark | no regression |
+| compileall | passed |
+
+---
+
+## [2.12.0] — 2026-06-11
+
+### Benchmark CI Workflow
+
+#### Added
+
+- GitHub Actions CI workflow for automated benchmark runs on push/PR.
+
+---
+
+## [2.11.0] — 2026-06-11
+
+### Adversarial Benchmark Suite
+
+#### Added
+
+- **Adversarial benchmark** — `benchmarks/adversarial/` with 20 initial cases covering:
+  - Paraphrase, unit variants, order shuffle, conflict updates, negation, long noise,
+    structure mixed, code semantics, identifier variants, comparison conditions,
+    multilingual noise.
+- Automated QA scoring with per-case pass/fail tracking.
+
+---
+
+## [2.10.0] — 2026-06-11
+
+### Real-World Benchmark Suite
+
+#### Added
+
+- **Real-world benchmark** — `benchmarks/realworld/` with 30 cases across:
+  - API JSON responses, incident postmortems, code reviews, technical specs, multi-turn conversations.
+- Automated fidelity scoring.
+
+---
+
+## [2.9.1] — 2026-06-11
+
+### Real-World Smoke Fixes
+
+#### Fixed
+
+- Edge cases found during real-world benchmark smoke testing.
+
+---
+
+## [2.9.0] — 2026-06-11
+
+### Phase 5c: Fact-Preserving Quality Optimization
+
+#### Changed
+
+- Quality-first compression tuning: density compression and ratio selection calibrated for factual preservation.
+- "宁可多留冗余，不可丢失信息" as guiding principle.
+
+---
+
+## [2.8.0] — 2026-06-11
+
+### Phase 5b: Density Compress + Ratio Recalibration
+
+#### Fixed
+
+- `density_compress()` bugs causing over-aggressive compression.
+- Ratio selection recalibrated across all content types.
+
+---
+
 ## [0.2.0] — 2026-06-11
 
 ### 🚀 Production-Ready Release
