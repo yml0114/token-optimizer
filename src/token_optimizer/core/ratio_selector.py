@@ -53,10 +53,10 @@ DUP_RATIO_THRESHOLD = 0.1    # 10%+ duplicates → enable dedup
 
 # Quality-tested ratio map (updated after density compression benchmark)
 RATIO_MAP = {
-    "short":     0.50,   # Was 0.75 — density compression handles it well
-    "medium":    0.40,   # Was 0.55 — moderate conversations
-    "long":      0.35,   # Was 0.40 — long conversations have high redundancy
-    "very_long": 0.25,   # Was 0.30 — deep compression
+    "short":     0.95,   # Very short, keep almost all — IC already cleans noise
+    "medium":    0.75,   # Moderate conversations
+    "long":      0.60,   # Long conversations
+    "very_long": 0.50,   # Deep compression
 }
 
 # Specs/code have different quality curves
@@ -234,11 +234,11 @@ def select_ratio(
     # ── JSON-heavy content ───────────────────────────────────────────────
     if profile.json_ratio > JSON_RATIO_THRESHOLD:
         if profile.length_bucket in ("short",):
-            ratio = 0.50   # Was 0.65
+            ratio = 0.70   # Density compress now works, need higher ratio
         elif profile.length_bucket in ("medium",):
-            ratio = 0.45   # Was 0.50
+            ratio = 0.60   # Was 0.45
         else:
-            ratio = 0.40   # Was 0.40
+            ratio = 0.50   # Was 0.40
         return CompressionPolicy(
             keep_ratio=ratio,
             json_aware=True,

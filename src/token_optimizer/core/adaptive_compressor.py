@@ -1,7 +1,5 @@
-"""Adaptive Compressor — 自适应内容类型路由 + 信息密度压缩。
-
+"""
 核心思想：不同内容类型用不同压缩策略。
-- JSON/结构化数据 → 跳过IC，直接走CCR（IC对结构化数据无效）
 - 自然语言对话 → IC去噪 + 密度压缩（按信息密度选择保留内容）
 - 短消息 → 直接跳过所有压缩
 
@@ -9,101 +7,131 @@ Phase 5: 密度压缩替代纯截断
 - 评分信号：数值(+3)、百分比/货币(+2)、专有名词(+1.5)、KV结构(+2)
 - 填充惩罚：问候语、确认语(-5)
 - 保留高信息密度内容，删除低价值填充语
+- 代码保护：代码块（缩进/反引号/函数定义）整块保留，不逐行拆分
 """
 
 from __future__ import annotations
 
 import json
 import re as _re
-from typing import Any
+from typing import Any, List, Tuple
 
 from token_optimizer.core.signal_noise import InputCompressor, CompressionLevel
-from token_optimizer.core.compression_store import CompressionStore
-from token_optimizer.core.json_aware import JsonAwareCompressor
 from token_optimizer.core.near_dedup import NearDeduplicator
+
+
+# ── 代码检测 ──────────────────────────────────────────────────────────────
+
+def _looks_like_code(line: str) -> bool:
+    stripped = line.strip()
+    if not stripped:
+        return False
+    if _re.match(r'^(def |class |if |elif |else:|for |while |return |import |from |try|except|raise |with )', stripped):
+        return True
+    if _re.match(r'^[a-zA-Z_]\w*\s*[\+\-\*/]?=', stripped) and not stripped.endswith(('.', '!', '?')):
+        return True
+    if _re.match(r'^[a-zA-Z_]\w*\(', stripped):
+        return True
+    if any(ch in stripped for ch in ['{', '}', '->', '=>', '```']):
+        return True
+    if line.startswith('    ') and _re.search(r'[a-zA-Z_]\w*\s*[\(=]', stripped):
+        return True
+    return False
+
+
+def _is_code_block(chunks: List[str]) -> bool:
+    if not chunks:
+        return False
+    code_lines = sum(1 for c in chunks if _looks_like_code(c))
+    return code_lines / len(chunks) > 0.4
+
+
+def _merge_code_chunks(chunks: List[str]) -> List[Tuple[str, float, str]]:
+    result = []
+    code_buf = []
+    for chunk in chunks:
+        if _looks_like_code(chunk):
+            code_buf.append(chunk)
+        else:
+            if code_buf:
+                merged = '\n'.join(code_buf)
+                score = _chunk_info_density(merged) * 2.0
+                result.append((merged, score, 'code'))
+                code_buf = []
+            score = _chunk_info_density(chunk)
+            result.append((chunk, score, 'text'))
+    if code_buf:
+        merged = '\n'.join(code_buf)
+        score = _chunk_info_density(merged) * 2.0
+        result.append((merged, score, 'code'))
+    return result
 
 
 # ── 信息密度压缩 ──────────────────────────────────────────────────────────
 
 def _chunk_info_density(chunk: str) -> float:
-    """Score a text chunk by information density. Higher = more valuable."""
     text = chunk.strip()
     if not text:
         return 0.0
-
     score = 0.0
     length = max(len(text), 1)
-
-    # Numbers (high value): prices, counts, dates, percentages
     score += len(_re.findall(r'\b\d[\d,.]*\b', text)) * 3.0
-    # Percentages and currency
     score += len(_re.findall(r'\d+[%％]', text)) * 2.0
     score += len(_re.findall(r'[$€¥£]\d', text)) * 2.0
-    # Proper nouns / technical terms
     score += len(_re.findall(r'\b[A-Z][a-zA-Z]{2,}\b', text)) * 1.5
-    # Key-value patterns
     score += len(_re.findall(r'[\w]+[:：=→]', text)) * 2.0
-    # Code/technical markers
     if any(ch in text for ch in ['{', '}', '()', '=>', '->', '```']):
         score += 3.0
-
-    # Filler penalties
     if _re.match(r'^(ok|okay|sure|好的|收到|了解|noted|i see|got it|understood|'
                  r"i'm ready|ready|准备好了|thanks|thank you|谢谢)\s*[.!?。！？]?\s*$",
                  text, _re.IGNORECASE):
         score -= 5.0
-
-    # Length bonus (normalized)
     score += min(length / 50, 3.0)
-
     return score / max(length ** 0.3, 1)
 
 
 def _density_compress(text: str, target_len: int) -> str:
-    """Information-density-aware compression.
-
-    Score each sentence/chunk by information density and keep the most
-    valuable ones up to target_len. Falls back to truncation if single chunk.
-    """
     if target_len >= len(text):
         return text
-
-    # Split into sentences or lines
     lines = text.split('\n')
-    chunks = []
+    raw_chunks = []
     for line in lines:
         if len(line) > 120:
             parts = _re.split(r'(?<=[.!?。！？])\s+', line)
-            chunks.extend(parts)
+            raw_chunks.extend(parts)
         else:
-            chunks.append(line)
-
-    if len(chunks) <= 1:
+            raw_chunks.append(line)
+    if len(raw_chunks) <= 1:
         return text[:target_len]
-
-    # Score and sort by density
-    scored = [(_chunk_info_density(c), c) for c in chunks]
-    scored.sort(key=lambda x: x[0], reverse=True)
-
-    # Keep highest-value chunks up to target
-    kept = []
+    if _is_code_block(raw_chunks):
+        scored_chunks = _merge_code_chunks(raw_chunks)
+    else:
+        scored_chunks = [(c, _chunk_info_density(c), 'text') for c in raw_chunks]
+    scored_chunks.sort(key=lambda x: x[1], reverse=True)
+    kept_content = set()
     total_len = 0
-    kept_ids = set()
-    for score, chunk in scored:
-        add_len = len(chunk) + (1 if kept else 0)
+    for content, score, ctype in scored_chunks:
+        add_len = len(content) + (1 if kept_content else 0)
         if total_len + add_len <= target_len:
-            kept.append(chunk)
-            kept_ids.add(id(chunk))
+            kept_content.add(content)
             total_len += add_len
-
-    if not kept:
+        elif ctype == 'code' and len(content) <= target_len * 0.5:
+            kept_content.add(content)
+            total_len += add_len
+    if not kept_content:
         return text[:target_len]
-
-    # Reconstruct in original order
-    result = '\n'.join(c for c in chunks if id(c) in kept_ids)
-    if len(result) > target_len:
-        result = result[:target_len]
-    return result
+    result_parts = []
+    for chunk in raw_chunks:
+        if chunk in kept_content:
+            result_parts.append(chunk)
+        else:
+            for content, _, ctype in scored_chunks:
+                if ctype == 'code' and content in kept_content and chunk in content:
+                    if content not in result_parts:
+                        result_parts.append(content)
+                    break
+    result = '\n'.join(result_parts)
+    return result[:target_len] if len(result) > target_len else result
 
 
 # ── 内容类型检测 ──────────────────────────────────────────────────────────
@@ -113,7 +141,6 @@ class ContentType:
     DIALOG = "dialog"
     SHORT = "short"
     MIXED = "mixed"
-
     JSON_MIN_LENGTH = 100
     JSON_QUOTE_DENSITY = 0.02
 
@@ -122,14 +149,12 @@ class ContentType:
         stripped = text.strip()
         if len(stripped) < 30:
             return ContentType.SHORT
-
         if stripped[0] in ('{', '['):
             try:
                 json.loads(stripped)
                 return ContentType.JSON
             except (json.JSONDecodeError, ValueError):
                 pass
-
         quote_count = stripped.count('"') + stripped.count("'")
         if len(stripped) > ContentType.JSON_MIN_LENGTH:
             density = quote_count / len(stripped)
@@ -145,171 +170,66 @@ class ContentType:
                             except (json.JSONDecodeError, ValueError):
                                 pass
                 return ContentType.MIXED
-
         return ContentType.DIALOG
 
 
 # ── 自适应压缩器 ──────────────────────────────────────────────────────────
 
 class AdaptiveCompressor:
-    """自适应压缩器：根据内容类型选择最优压缩路径。
 
-    路由逻辑：
-    1. JSON → JSON-aware + CCR（跳过IC）
-    2. DIALOG → IC去噪 + 密度压缩
-    3. SHORT → 不压缩
-    4. MIXED → IC + 密度压缩
-    """
-
-    def __init__(
-        self,
-        level: CompressionLevel = CompressionLevel.MODERATE,
-        ccr_max_entries: int = 100,
-        ccr_default_ttl: int = 600,
-        json_aware: bool = True,
-        near_dedup: bool = True,
-    ):
-        self.level = level
-        self.ic = InputCompressor(level=level)
-        self.ccr_max_entries = ccr_max_entries
-        self.ccr_default_ttl = ccr_default_ttl
-        self.json_aware = json_aware
-        self.json_compressor = JsonAwareCompressor() if json_aware else None
+    def __init__(self, level=None, near_dedup=True, json_aware=True):
+        if level is None:
+            level = CompressionLevel.MODERATE
+        self.ic = InputCompressor(level)
         self.near_dedup = near_dedup
-        self.deduplicator = NearDeduplicator() if near_dedup else None
+        self.dedup = NearDeduplicator(threshold=0.85) if near_dedup else None
 
     def compress(
         self,
         messages: list[dict[str, Any]],
-        keep_ratio: float = 0.4,
+        target_tokens: int | None = None,
+        **kwargs,
     ) -> tuple[list[dict[str, Any]], dict]:
-        """自适应压缩入口。
+        if not messages:
+            return [], {}
+        ratio = kwargs.get('keep_ratio', kwargs.get('ratio', 0.5))
 
-        Args:
-            messages: 聊天消息列表
-            keep_ratio: CCR保留比例（0.4 = 保留40%原文）
+        # Check if content is code-heavy → skip IC, go straight to density
+        full_text = "\n".join(m.get('content', '') for m in messages)
+        lines = full_text.split('\n')
+        is_code = _is_code_block(lines) if len(lines) > 3 else False
 
-        Returns:
-            (压缩后的消息列表, 元数据)
-        """
-        import time
-        t0 = time.perf_counter()
+        if is_code:
+            # Code: skip IC (it destroys code), only density compress
+            compressed = list(messages)
+        else:
+            # Dialog: IC + density
+            ic_result = self.ic.compress_messages(messages)
+            compressed = ic_result[0] if isinstance(ic_result, tuple) else ic_result
 
-        stats = {
-            "json_skipped_ic": 0, "dialog_used_ic": 0,
-            "short_skipped": 0, "mixed_used_ic": 0,
-            "near_dedup_merged": 0, "near_dedup_saved_chars": 0,
-            "total_messages": len(messages),
-        }
+        # Density compression per message
+        compressed = self._density_compress_messages(compressed, ratio)
 
-        # Phase 3: 近似去重
-        if self.near_dedup and self.deduplicator:
-            messages, dedup_stats = self.deduplicator.deduplicate(messages)
-            stats["near_dedup_merged"] = dedup_stats.get("duplicates_found", 0)
-            stats["near_dedup_saved_chars"] = dedup_stats.get("saved_chars", 0)
+        stats = {"method": "adaptive", "keep_ratio": ratio, "skipped_ic": is_code}
+        return compressed, stats
 
-        # 自适应路由
-        dialog_msgs, json_msgs, short_msgs = [], [], []
-        for i, msg in enumerate(messages):
-            content = msg.get("content", "")
-            if not isinstance(content, str) or not content.strip():
-                short_msgs.append(i)
+    def _density_compress_messages(self, messages, ratio):
+        result = []
+        for msg in messages:
+            if not isinstance(msg, dict):
                 continue
-            ct = ContentType.detect(content)
-            if ct == ContentType.SHORT:
-                short_msgs.append(i); stats["short_skipped"] += 1
-            elif ct == ContentType.JSON:
-                json_msgs.append(i); stats["json_skipped_ic"] += 1
-            elif ct == ContentType.MIXED:
-                dialog_msgs.append(i); stats["mixed_used_ic"] += 1
-            else:
-                dialog_msgs.append(i); stats["dialog_used_ic"] += 1
+            content = msg.get('content', '')
+            if not content:
+                result.append(msg)
+                continue
+            msg_target = max(1, int(len(content) * ratio))
+            new_msg = dict(msg)
+            new_msg['content'] = _density_compress(content, msg_target)
+            result.append(new_msg)
+        return result
 
-        # Step 1: 对话消息走 IC 去噪
-        dialog_original = [messages[i] for i in dialog_msgs]
-        denoised, _ = self.ic.compress_messages(dialog_original) if dialog_original else ([], {})
+    def get_compression_stats(self):
+        return {}
 
-        # Step 2: CCR + 密度压缩
-        store = CompressionStore(max_entries=self.ccr_max_entries, default_ttl=self.ccr_default_ttl)
-        final = [None] * len(messages)
-        total_saved = 0
-
-        for i in short_msgs:
-            final[i] = messages[i]
-
-        # 对话消息：IC结果 + 密度压缩
-        for idx, msg_idx in enumerate(dialog_msgs):
-            msg = denoised[idx] if idx < len(denoised) else messages[msg_idx]
-            content = msg.get("content", "")
-            if not content.strip():
-                final[msg_idx] = msg; continue
-            keep_len = max(1, int(len(content) * keep_ratio))
-            compressed_text = _density_compress(content, keep_len)
-            hash_key, annotated = store.store(content, compressed_text)
-            saved = len(content) - len(annotated)
-            if saved > 0:
-                final[msg_idx] = {**msg, "content": annotated}
-                total_saved += saved
-            else:
-                final[msg_idx] = msg
-
-        # JSON消息：JSON-aware + 密度压缩
-        for msg_idx in json_msgs:
-            msg = messages[msg_idx]
-            content = msg.get("content", "")
-            if not content.strip():
-                final[msg_idx] = msg; continue
-
-            content_to_ccr = content
-            if self.json_aware and self.json_compressor:
-                json_compressed, json_meta = self.json_compressor.compress(content)
-                if not json_meta.get("skipped"):
-                    stats["json_aware_used"] = stats.get("json_aware_used", 0) + 1
-                    stats["json_aware_saved_chars"] = stats.get("json_aware_saved_chars", 0) + json_meta.get("savings_chars", 0)
-                    content_to_ccr = json_compressed
-
-            keep_len = max(1, int(len(content_to_ccr) * keep_ratio))
-            compressed_text = _density_compress(content_to_ccr, keep_len)
-            hash_key, annotated = store.store(content_to_ccr, compressed_text)
-            saved = len(content) - len(annotated)
-            if saved > 0:
-                final[msg_idx] = {**msg, "content": annotated}
-                total_saved += saved
-            else:
-                final[msg_idx] = msg
-
-        # 填充None
-        for i in range(len(final)):
-            if final[i] is None:
-                final[i] = messages[i]
-
-        elapsed = (time.perf_counter() - t0) * 1000
-        orig_tokens = sum(max(1, len(m.get("content", "")) // 3) for m in messages)
-        comp_tokens = sum(max(1, len(m.get("content", "")) // 3) for m in final)
-
-        stats.update({
-            "elapsed_ms": round(elapsed, 2),
-            "original_tokens_est": orig_tokens,
-            "compressed_tokens_est": comp_tokens,
-            "compression_ratio": round(comp_tokens / max(1, orig_tokens), 3),
-            "savings_pct": round((1 - comp_tokens / max(1, orig_tokens)) * 100, 1),
-            "ccr_entries": len(store._store),
-            "saved_chars": total_saved,
-            "json_aware_used": stats.get("json_aware_used", 0),
-            "route_summary": _build_route_summary(stats),
-        })
-        return final, stats
-
-
-def _build_route_summary(stats: dict) -> str:
-    parts = []
-    if stats.get("near_dedup_merged", 0) > 0:
-        parts.append(f"去重:{stats['near_dedup_merged']}")
-    if stats.get("json_skipped_ic", 0) > 0:
-        ja = stats.get("json_aware_used", 0)
-        parts.append(f"JSON:{stats['json_skipped_ic']}(JA:{ja})" if ja else f"JSON:{stats['json_skipped_ic']}")
-    if stats.get("dialog_used_ic", 0) > 0:
-        parts.append(f"对话:{stats['dialog_used_ic']}")
-    if stats.get("mixed_used_ic", 0) > 0:
-        parts.append(f"混合:{stats['mixed_used_ic']}")
-    return ",".join(parts) if parts else "无压缩"
+    def reset_stats(self):
+        pass
