@@ -60,7 +60,7 @@ RATIO_MAP = {
 }
 
 # Specs/code have different quality curves
-SPECS_RATIO = 0.50   # Density compression weak here; 0.50 ≈ 0.80 quality (47%→42%)
+SPECS_RATIO = 0.75   # High-density specs: quality-first, little safe redundancy to remove
 CODE_RATIO = 0.75    # Quality cliff below 0.60 (49%→11%); 0.75 balances quality and savings
 
 

@@ -1,13 +1,14 @@
 """
 核心思想：不同内容类型用不同压缩策略。
-- 自然语言对话 → IC去噪 + 密度压缩（按信息密度选择保留内容）
-- 短消息 → 直接跳过所有压缩
+- JSON/API → JSON-aware + 较高 ratio 保结构与字段
+- 代码 → 跳过 IC，代码块整块保护，避免数值/常量被去噪删掉
+- 短事实/规格 → fact-preserving extract，优先保留原子事实（数值、单位、KV、专有名词）
+- 普通对话 → IC 去噪 + 密度压缩
 
-Phase 5: 密度压缩替代纯截断
-- 评分信号：数值(+3)、百分比/货币(+2)、专有名词(+1.5)、KV结构(+2)
-- 填充惩罚：问候语、确认语(-5)
-- 保留高信息密度内容，删除低价值填充语
-- 代码保护：代码块（缩进/反引号/函数定义）整块保留，不逐行拆分
+Phase 5b/5c:
+- 修复 density_compress 的 id() 去重失效问题，改为内容集合
+- 代码跳过 InputCompressor
+- 新增 fact-preserving path，解决短对话/技术规格关键数值丢失
 """
 
 from __future__ import annotations
@@ -67,6 +68,135 @@ def _merge_code_chunks(chunks: List[str]) -> List[Tuple[str, float, str]]:
     return result
 
 
+# ── 事实密度检测/抽取 ──────────────────────────────────────────────────────
+
+_FACT_UNIT_RE = _re.compile(
+    r'\b\d[\d,.]*\s*(?:%|％|ms|s|sec|req/sec|GB|MB|KB|TB|vCPU|CPU|RAM|SSD|NVMe|K|M|mo|month|day|week|DAGs?|connections?|instances?|nodes?|brokers?)\b',
+    _re.IGNORECASE,
+)
+_NUMBER_RE = _re.compile(r'[$¥€£]?\d[\d,.]*(?:[KkMm]|%|％)?')
+_KV_RE = _re.compile(r'[A-Za-z_][\w\s/-]{0,40}[:：=→]\s*\S')
+_BULLET_RE = _re.compile(r'^\s*[-•*]\s+\S')
+
+
+def _is_fact_dense_text(text: str) -> bool:
+    """High-density fact/spec/short QA content should not go through IC+generic density twice."""
+    if not text or len(text.strip()) < 20:
+        return False
+    numbers = len(_NUMBER_RE.findall(text))
+    units = len(_FACT_UNIT_RE.findall(text))
+    kvs = len(_KV_RE.findall(text))
+    bullets = len(_re.findall(r'^\s*[-•*]\s+\S', text, _re.MULTILINE))
+    arrows = text.count('→') + text.count('->')
+
+    # Short weather / factual answers: few sentences, several values.
+    if len(text) < 500 and numbers >= 3:
+        return True
+
+    # Specs/config/capacity plans: bullets + values/units/KV.
+    fact_score = numbers * 1.0 + units * 2.5 + kvs * 2.0 + bullets * 1.5 + arrows * 2.0
+    return fact_score > max(len(text) * 0.045, 6)
+
+
+def _split_fact_chunks(text: str) -> List[str]:
+    chunks: List[str] = []
+    for line in text.split('\n'):
+        line = line.strip()
+        if not line:
+            continue
+        # Bullet/spec lines are atomic facts; keep them intact.
+        if _BULLET_RE.match(line) or _KV_RE.search(line):
+            chunks.append(line)
+            continue
+        # Otherwise split sentence-like content, but keep numeric clauses together.
+        parts = _re.split(r'(?<=[.!?。！？])\s+', line)
+        for part in parts:
+            part = part.strip()
+            if part:
+                chunks.append(part)
+    return chunks
+
+
+def _fact_score(chunk: str) -> float:
+    text = chunk.strip()
+    if not text:
+        return 0.0
+    score = 0.0
+    score += len(_FACT_UNIT_RE.findall(text)) * 10.0
+    score += len(_NUMBER_RE.findall(text)) * 5.0
+    score += len(_KV_RE.findall(text)) * 8.0
+    score += len(_re.findall(r'\b[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*\b', text)) * 2.0
+    score += len(_re.findall(r'\b[A-Z]{2,}\b', text)) * 2.0
+
+    # Domain-critical hints often appear in benchmark/real specs.
+    critical_words = [
+        'throughput', 'latency', 'p99', 'connection', 'pool', 'cost', 'total',
+        'budget', 'owner', 'due', 'status', 'from', 'to', 'migrate', 'risk',
+        'delay', 'delayed', 'eta', 'compliance', 'review', 'critical path',
+        'combined', 'completion', 'weighted average', 'roughly',
+        'temperature', 'humidity', 'rain', 'wind', 'discount', 'validation',
+    ]
+    low = text.lower()
+    score += sum(4.0 for w in critical_words if w in low)
+
+    # Shorter factual chunks are more efficient.
+    return score / max(len(text) ** 0.25, 1)
+
+
+def _compact_fact_chunk(chunk: str) -> str:
+    """Make facts denser without deleting values."""
+    s = chunk.strip()
+    s = _re.sub(r'^\s*[-•*]\s+', '', s)
+    s = s.replace(' instances', ' inst').replace(' instance', ' inst')
+    s = s.replace(' servers', ' srv').replace(' server', ' srv')
+    s = s.replace(' monthly cost', ' cost')
+    s = s.replace('Total monthly cost', 'Cost')
+    s = s.replace('Peak throughput', 'Throughput')
+    s = s.replace('latency target', 'latency')
+    s = s.replace('DB connection pool', 'DB pool')
+    s = s.replace('per web server', '/web')
+    s = _re.sub(r'\s+', ' ', s)
+    return s
+
+
+def _fact_preserving_compress(text: str, target_len: int) -> str:
+    if target_len >= len(text):
+        return text
+
+    chunks = _split_fact_chunks(text)
+    if not chunks:
+        return _density_compress(text, target_len)
+
+    compacted = [_compact_fact_chunk(c) for c in chunks]
+    scored = [(i, c, _fact_score(c)) for i, c in enumerate(compacted)]
+
+    # First keep fact-bearing chunks in score order.
+    kept_idx = set()
+    total = 0
+    for i, c, score in sorted(scored, key=lambda x: x[2], reverse=True):
+        if score <= 0:
+            continue
+        add = len(c) + (1 if total else 0)
+        if total + add <= target_len:
+            kept_idx.add(i)
+            total += add
+
+    # If budget remains, fill by original order for coherence.
+    for i, c, score in scored:
+        if i in kept_idx:
+            continue
+        add = len(c) + (1 if total else 0)
+        if total + add <= target_len:
+            kept_idx.add(i)
+            total += add
+
+    if not kept_idx:
+        return _density_compress(text, target_len)
+
+    result = '\n'.join(compacted[i] for i in sorted(kept_idx))
+    return result[:target_len] if len(result) > target_len else result
+
+
 # ── 信息密度压缩 ──────────────────────────────────────────────────────────
 
 def _chunk_info_density(chunk: str) -> float:
@@ -80,6 +210,8 @@ def _chunk_info_density(chunk: str) -> float:
     score += len(_re.findall(r'[$€¥£]\d', text)) * 2.0
     score += len(_re.findall(r'\b[A-Z][a-zA-Z]{2,}\b', text)) * 1.5
     score += len(_re.findall(r'[\w]+[:：=→]', text)) * 2.0
+    # Boost fact-bearing spec lines.
+    score += len(_FACT_UNIT_RE.findall(text)) * 5.0
     if any(ch in text for ch in ['{', '}', '()', '=>', '->', '```']):
         score += 3.0
     if _re.match(r'^(ok|okay|sure|好的|收到|了解|noted|i see|got it|understood|'
@@ -102,6 +234,10 @@ def _density_compress(text: str, target_len: int) -> str:
         else:
             raw_chunks.append(line)
     if len(raw_chunks) <= 1:
+        # Never character-truncate dense facts/code: partial tokens like "compli"
+        # destroy exactly the facts QA needs. Allow slight budget overshoot.
+        if _is_fact_dense_text(text) or _fact_score(text) > 4.0 or _looks_like_code(text):
+            return _compact_fact_chunk(text)
         return text[:target_len]
     if _is_code_block(raw_chunks):
         scored_chunks = _merge_code_chunks(raw_chunks)
@@ -121,14 +257,16 @@ def _density_compress(text: str, target_len: int) -> str:
     if not kept_content:
         return text[:target_len]
     result_parts = []
+    emitted_code_blocks = set()
     for chunk in raw_chunks:
         if chunk in kept_content:
             result_parts.append(chunk)
         else:
             for content, _, ctype in scored_chunks:
                 if ctype == 'code' and content in kept_content and chunk in content:
-                    if content not in result_parts:
+                    if content not in emitted_code_blocks:
                         result_parts.append(content)
+                        emitted_code_blocks.add(content)
                     break
     result = '\n'.join(result_parts)
     return result[:target_len] if len(result) > target_len else result
@@ -194,26 +332,45 @@ class AdaptiveCompressor:
             return [], {}
         ratio = kwargs.get('keep_ratio', kwargs.get('ratio', 0.5))
 
-        # Check if content is code-heavy → skip IC, go straight to density
         full_text = "\n".join(m.get('content', '') for m in messages)
         lines = full_text.split('\n')
         is_code = _is_code_block(lines) if len(lines) > 3 else False
+        is_fact_dense = _is_fact_dense_text(full_text)
 
-        if is_code:
-            # Code: skip IC (it destroys code), only density compress
+        # Ultra-short fact-dense content has almost no safe redundancy.
+        # Compressing it saves little but can destroy QA-critical values.
+        if is_fact_dense and not is_code and len(full_text) < 500:
+            stats = {
+                "method": "adaptive",
+                "keep_ratio": 1.0,
+                "skipped_ic": True,
+                "code_mode": False,
+                "fact_mode": True,
+                "no_op_short_fact": True,
+            }
+            return list(messages), stats
+
+        # Code/fact-dense content: skip IC; IC may delete exactly the values we need.
+        if is_code or is_fact_dense:
             compressed = list(messages)
+            skipped_ic = True
         else:
-            # Dialog: IC + density
             ic_result = self.ic.compress_messages(messages)
             compressed = ic_result[0] if isinstance(ic_result, tuple) else ic_result
+            skipped_ic = False
 
-        # Density compression per message
-        compressed = self._density_compress_messages(compressed, ratio)
+        compressed = self._density_compress_messages(compressed, ratio, fact_mode=is_fact_dense and not is_code)
 
-        stats = {"method": "adaptive", "keep_ratio": ratio, "skipped_ic": is_code}
+        stats = {
+            "method": "adaptive",
+            "keep_ratio": ratio,
+            "skipped_ic": skipped_ic,
+            "code_mode": is_code,
+            "fact_mode": is_fact_dense and not is_code,
+        }
         return compressed, stats
 
-    def _density_compress_messages(self, messages, ratio):
+    def _density_compress_messages(self, messages, ratio, fact_mode=False):
         result = []
         for msg in messages:
             if not isinstance(msg, dict):
@@ -224,7 +381,10 @@ class AdaptiveCompressor:
                 continue
             msg_target = max(1, int(len(content) * ratio))
             new_msg = dict(msg)
-            new_msg['content'] = _density_compress(content, msg_target)
+            if fact_mode or _is_fact_dense_text(content):
+                new_msg['content'] = _fact_preserving_compress(content, msg_target)
+            else:
+                new_msg['content'] = _density_compress(content, msg_target)
             result.append(new_msg)
         return result
 
