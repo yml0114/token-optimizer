@@ -1,0 +1,17 @@
+{
+  "id": "adv_assert_json_path_022",
+  "category": "semantic_assertions",
+  "title": "Nested JSON path facts",
+  "attack": "nested JSON values mixed with narrative aliases",
+  "messages": [
+    {"role": "system", "content": "You preserve JSON path facts."},
+    {"role": "user", "content": "Keep these JSON path facts: customer.plan is enterprise, invoice.total is 1247.50, invoice.currency is USD, invoice.tax is 83.10, limits.monthly_tokens is 4500000, and region is eu-central-1. Payload: {\"customer\":{\"id\":\"cus_9921\",\"plan\":\"enterprise\"},\"invoice\":{\"id\":\"inv_20260705_2219\",\"total\":1247.50,\"currency\":\"USD\",\"tax\":83.10},\"limits\":{\"monthly_tokens\":4500000},\"region\":\"eu-central-1\"}"}
+  ],
+  "qa_assertions": [
+    {"type": "all_of", "label": "customer path", "values": ["cus_9921", "enterprise"]},
+    {"type": "all_of", "label": "invoice totals", "values": ["1247.50", "USD", "83.10"]},
+    {"type": "any_of", "label": "monthly token limit", "values": ["4500000", "4,500,000"]},
+    {"type": "present", "label": "region", "value": "eu-central-1"},
+    {"type": "present", "label": "invoice id", "value": "inv_20260705_2219"}
+  ]
+}

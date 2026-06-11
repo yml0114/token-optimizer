@@ -325,7 +325,7 @@ class AdaptiveCompressor:
             level = CompressionLevel.MODERATE
         self.ic = InputCompressor(level)
         self.near_dedup = near_dedup
-        self.dedup = NearDeduplicator(threshold=0.85) if near_dedup else None
+        self.dedup = NearDeduplicator(similarity_threshold=0.85) if near_dedup else None
 
     def compress(
         self,

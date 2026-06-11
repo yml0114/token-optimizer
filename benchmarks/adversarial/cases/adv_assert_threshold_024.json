@@ -1,0 +1,17 @@
+{
+  "id": "adv_assert_threshold_024",
+  "category": "semantic_assertions",
+  "title": "Threshold comparison conditions",
+  "attack": "dense numeric thresholds and inequality operators",
+  "messages": [
+    {"role": "system", "content": "You preserve threshold rules."},
+    {"role": "user", "content": "Alert rules: trigger P0 when p95_latency_ms > 250 and error_rate >= 1.5%. Trigger P1 when queue_depth > 900 or cpu_utilization >= 88%. Do not alert when sample_size < 1000. Region ap-northeast-1, service gateway-v3."}
+  ],
+  "qa_assertions": [
+    {"type": "all_of", "label": "p0 latency", "values": ["p95_latency_ms", "> 250"]},
+    {"type": "all_of", "label": "p0 error rate", "values": ["error_rate", ">= 1.5%"]},
+    {"type": "all_of", "label": "p1 queue cpu", "values": ["queue_depth", "> 900", "cpu_utilization", ">= 88%"]},
+    {"type": "present", "label": "sample no alert", "value": "sample_size < 1000"},
+    {"type": "all_of", "label": "service location", "values": ["ap-northeast-1", "gateway-v3"]}
+  ]
+}

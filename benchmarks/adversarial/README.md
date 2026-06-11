@@ -17,9 +17,9 @@ Its purpose is to expose factual-retention boundaries under harder input conditi
 
 ## Latest result
 
-- Cases: 20
-- QA checks: 186/186 (100.0%)
-- Perfect cases: 20/20
+- Cases: 24
+- QA checks: 205/205 (100.0%)
+- Perfect cases: 24/24
 - Failed cases: 0
 - Miss classification: alias_gap=0, true_loss=0, assertion_gap=0
 
@@ -36,6 +36,7 @@ Its purpose is to expose factual-retention boundaries under harder input conditi
 | negation | 2 | 17/17 | 0 |
 | order_shuffle | 2 | 19/19 | 0 |
 | paraphrase | 2 | 14/14 | 0 |
+| semantic_assertions | 4 | 19/19 | 0 |
 | structure_mixed | 2 | 23/23 | 0 |
 | unit_variants | 3 | 24/24 | 0 |
 

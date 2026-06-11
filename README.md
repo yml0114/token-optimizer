@@ -297,3 +297,24 @@ TOKEN_OPTIMIZER_SMART_MODELS=
 ## 许可证
 
 MIT
+
+## Public API smoke coverage
+
+v2.16 also introduces a thin public API layer for library integration:
+
+```python
+from token_optimizer import compress_text
+
+result = compress_text(
+    "Owner Liang. Deadline Jun 25. Budget is 900 USD.",
+    mode="safe",
+    content_type="memory",
+    preserve=["numbers", "dates", "identifiers"],
+)
+
+print(result.compressed)
+print(result.stats)
+print(result.quality.miss_summary)
+```
+
+`compress_text()` is intentionally scoped to caller-selected text. It does not retrieve memory, rank context blocks, assemble prompts, or manage long-term context.

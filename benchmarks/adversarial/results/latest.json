@@ -1,11 +1,91 @@
 {
-  "total_cases": 20,
-  "total_qa": 186,
-  "passed_qa": 186,
+  "total_cases": 24,
+  "total_qa": 205,
+  "passed_qa": 205,
   "qa_rate": 1.0,
-  "perfect_cases": 20,
+  "perfect_cases": 24,
   "failed_cases": [],
   "rows": [
+    {
+      "id": "adv_assert_json_path_022",
+      "category": "semantic_assertions",
+      "title": "Nested JSON path facts",
+      "attack": "nested JSON values mixed with narrative aliases",
+      "path": "benchmarks/adversarial/cases/adv_assert_json_path_022.json",
+      "tokens": 119,
+      "keep_ratio": 0.95,
+      "method": "adaptive",
+      "qa_passed": 5,
+      "qa_total": 5,
+      "qa_rate": 1.0,
+      "misses": [],
+      "miss_details": [],
+      "miss_summary": {
+        "alias_gap": 0,
+        "true_loss": 0,
+        "assertion_gap": 0
+      }
+    },
+    {
+      "id": "adv_assert_latest_021",
+      "category": "semantic_assertions",
+      "title": "Latest corrected launch date",
+      "attack": "stale value appears before final correction",
+      "path": "benchmarks/adversarial/cases/adv_assert_latest_021.json",
+      "tokens": 74,
+      "keep_ratio": 0.95,
+      "method": "adaptive",
+      "qa_passed": 4,
+      "qa_total": 4,
+      "qa_rate": 1.0,
+      "misses": [],
+      "miss_details": [],
+      "miss_summary": {
+        "alias_gap": 0,
+        "true_loss": 0,
+        "assertion_gap": 0
+      }
+    },
+    {
+      "id": "adv_assert_negation_023",
+      "category": "semantic_assertions",
+      "title": "Negative retry and delete policy",
+      "attack": "must preserve two independent negations",
+      "path": "benchmarks/adversarial/cases/adv_assert_negation_023.json",
+      "tokens": 53,
+      "keep_ratio": 0.95,
+      "method": "adaptive",
+      "qa_passed": 5,
+      "qa_total": 5,
+      "qa_rate": 1.0,
+      "misses": [],
+      "miss_details": [],
+      "miss_summary": {
+        "alias_gap": 0,
+        "true_loss": 0,
+        "assertion_gap": 0
+      }
+    },
+    {
+      "id": "adv_assert_threshold_024",
+      "category": "semantic_assertions",
+      "title": "Threshold comparison conditions",
+      "attack": "dense numeric thresholds and inequality operators",
+      "path": "benchmarks/adversarial/cases/adv_assert_threshold_024.json",
+      "tokens": 69,
+      "keep_ratio": 0.95,
+      "method": "adaptive",
+      "qa_passed": 5,
+      "qa_total": 5,
+      "qa_rate": 1.0,
+      "misses": [],
+      "miss_details": [],
+      "miss_summary": {
+        "alias_gap": 0,
+        "true_loss": 0,
+        "assertion_gap": 0
+      }
+    },
     {
       "id": "adv_code_negation_016",
       "category": "code_semantics",

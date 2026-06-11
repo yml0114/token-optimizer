@@ -1,0 +1,19 @@
+{
+  "id": "adv_assert_latest_021",
+  "category": "semantic_assertions",
+  "title": "Latest corrected launch date",
+  "attack": "stale value appears before final correction",
+  "messages": [
+    {"role": "system", "content": "You preserve corrected project facts."},
+    {"role": "user", "content": "Initial release plan: API public wrapper ships on Jul 03, owner Liang, scope includes compress_text and CompressionResult."},
+    {"role": "assistant", "content": "Noted: Jul 03."},
+    {"role": "user", "content": "Correction: Jul 03 is stale. Final ship date is Jul 05 after semantic assertion cases are added. Owner remains Liang. Scope still includes compress_text and CompressionResult."}
+  ],
+  "qa_assertions": [
+    {"type": "latest_value", "label": "final ship date", "current": ["Jul 05"], "stale": ["Jul 03"]},
+    {"type": "present", "label": "stale marker", "value": "stale"},
+    {"type": "any_of", "label": "owner", "values": ["Liang"]},
+    {"type": "all_of", "label": "api scope", "values": ["compress_text", "CompressionResult"]}
+  ],
+  "semantic_expectation": "The evaluator should treat Jul 05 as the current value while still preserving the stale marker."
+}

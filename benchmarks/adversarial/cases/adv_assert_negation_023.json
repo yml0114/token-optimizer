@@ -1,0 +1,17 @@
+{
+  "id": "adv_assert_negation_023",
+  "category": "semantic_assertions",
+  "title": "Negative retry and delete policy",
+  "attack": "must preserve two independent negations",
+  "messages": [
+    {"role": "system", "content": "You preserve safety policies exactly."},
+    {"role": "user", "content": "Policy update: do not retry HTTP 4xx responses, never delete user files without explicit confirmation, and do not send external emails automatically. Safe retries are allowed only for HTTP 502 and HTTP 503. Owner is SafetyOps."}
+  ],
+  "qa_assertions": [
+    {"type": "present", "label": "no retry 4xx", "value": "do not retry HTTP 4xx"},
+    {"type": "present", "label": "no delete without confirmation", "value": "never delete user files without explicit confirmation"},
+    {"type": "present", "label": "no automatic external email", "value": "do not send external emails automatically"},
+    {"type": "all_of", "label": "allowed retry statuses", "values": ["HTTP 502", "HTTP 503"]},
+    {"type": "present", "label": "owner", "value": "SafetyOps"}
+  ]
+}
