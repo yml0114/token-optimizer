@@ -1724,20 +1724,22 @@ class StatisticalAnalyzer:
             compression_hint="numeric_standard_compress" + ("_has_anomaly" if is_anomaly else ""),
         )
 
+    # Pre-compiled temporal patterns (Y4 fix: avoid re.compile on every call)
+    _TEMPORAL_PATTERNS: list[re.Pattern] = [
+        re.compile(r'\d{4}-\d{2}-\d{2}'),
+        re.compile(r'\d{4}/\d{2}/\d{2}'),
+        re.compile(r'\d{2}:\d{2}:\d{2}'),
+        re.compile(r'\d{10,13}'),  # unix timestamps
+        re.compile(r'(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)', re.I),
+    ]
+
     def _has_temporal_pattern(self, str_values: list[str]) -> bool:
         """Check if values match common time/date patterns."""
-        temporal_patterns = [
-            re.compile(r'\d{4}-\d{2}-\d{2}'),
-            re.compile(r'\d{4}/\d{2}/\d{2}'),
-            re.compile(r'\d{2}:\d{2}:\d{2}'),
-            re.compile(r'\d{10,13}'),  # unix timestamps
-            re.compile(r'(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)', re.I),
-        ]
         # Check at least 30% of values match temporal patterns
         match_count = 0
         sample = str_values[:min(20, len(str_values))]
         for sv in sample:
-            if any(p.search(sv) for p in temporal_patterns):
+            if any(p.search(sv) for p in self._TEMPORAL_PATTERNS):
                 match_count += 1
         return match_count >= len(sample) * 0.3
 

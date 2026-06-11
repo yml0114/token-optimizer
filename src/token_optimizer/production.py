@@ -172,26 +172,26 @@ class ProductionOptimizer:
         ccr_meta: dict[str, Any] = {"enabled": self.config.enable_ccr}
 
         # CCR: Store original content before compression
-        ccr_stored_hashes: list[str] = []
+        ccr_hash_map: dict[str, str] = {}  # content_prefix → hash_key
         if self.ccr_store and gate.get("enabled", False):
             for msg in cleaned:
                 content = msg.get("content", "")
                 if isinstance(content, str) and len(content) > 50:
-                    # Only store meaningful content (not tiny fragments)
                     hash_key, _ = self.ccr_store.store(
                         original_text=content,
-                        compressed_text=content,  # will be updated after compression
+                        compressed_text=content,  # updated after annotate
                     )
-                    ccr_stored_hashes.append(hash_key)
-            ccr_meta["stored_count"] = len(ccr_stored_hashes)
+                    # Use first 80 chars as lookup key for content matching
+                    ccr_hash_map[content[:80]] = hash_key
+            ccr_meta["stored_count"] = len(ccr_hash_map)
 
         if gate["enabled"]:
             try:
                 optimized_messages, l1_meta = self.smart.compress(cleaned, system_text=system_text)
                 # CCR: Annotate compressed messages with retrieval markers
-                if self.ccr_store and ccr_stored_hashes:
+                if self.ccr_store and ccr_hash_map:
                     optimized_messages = self._ccr_annotate(
-                        optimized_messages, cleaned, ccr_stored_hashes
+                        optimized_messages, ccr_hash_map
                     )
             except Exception as e:
                 optimized_messages = cleaned
@@ -277,42 +277,54 @@ class ProductionOptimizer:
     def _ccr_annotate(
         self,
         compressed_messages: list[dict[str, Any]],
-        original_messages: list[dict[str, Any]],
-        stored_hashes: list[str],
+        ccr_hash_map: dict[str, str],
     ) -> list[dict[str, Any]]:
         """Annotate compressed messages with CCR retrieval markers.
 
-        For each compressed message that has a corresponding original in the
-        store, append a retrieval marker so the LLM can recall the original
-        content if needed.
+        Uses content-prefix matching instead of index-based matching to
+        correctly handle cases where SmartCompressor changes message count/order.
 
         Args:
             compressed_messages: Messages after compression.
-            original_messages: Messages before compression (for hash matching).
-            stored_hashes: List of hash keys stored in the CCR store.
+            ccr_hash_map: Mapping from content_prefix (first 80 chars of original)
+                         to CCR hash key.
 
         Returns:
             Annotated compressed messages with retrieval markers.
         """
-        if not self.ccr_store or not stored_hashes:
+        if not self.ccr_store or not ccr_hash_map:
             return compressed_messages
 
         result = []
-        hash_idx = 0
         for msg in compressed_messages:
             content = msg.get("content", "")
-            if isinstance(content, str) and hash_idx < len(stored_hashes):
-                hash_key = stored_hashes[hash_idx]
-                if self.ccr_store.has(hash_key):
-                    marker = f" [TO:retrieve hash={hash_key}]"
-                    if marker not in content:
-                        new_msg = {**msg, "content": content + marker}
-                        result.append(new_msg)
-                    else:
-                        result.append(msg)
+            if not isinstance(content, str) or len(content) < 10:
+                result.append(msg)
+                continue
+
+            # Try to match by checking if compressed content is a prefix of
+            # any stored original, or if original starts with compressed content
+            matched_hash = None
+            for orig_prefix, hash_key in ccr_hash_map.items():
+                if content[:80] == orig_prefix:
+                    # Exact prefix match (compression preserved start)
+                    matched_hash = hash_key
+                    break
+                if orig_prefix.startswith(content[:60]):
+                    # Original starts with compressed content
+                    matched_hash = hash_key
+                    break
+                if content[:60] in orig_prefix:
+                    # Compressed content is substring of original prefix
+                    matched_hash = hash_key
+                    break
+
+            if matched_hash and self.ccr_store.has(matched_hash):
+                marker = f" [TO:retrieve hash={matched_hash}]"
+                if marker not in content:
+                    result.append({**msg, "content": content + marker})
                 else:
                     result.append(msg)
-                hash_idx += 1
             else:
                 result.append(msg)
         return result

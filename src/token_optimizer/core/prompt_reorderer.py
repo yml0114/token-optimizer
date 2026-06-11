@@ -85,9 +85,11 @@ class DynamicContentDetector:
 
     # ── Timestamp patterns ──
     _TIMESTAMP_PATTERNS = [
-        # Unix timestamp (10-13 digits, ms or s precision)
-        r'\b\d{10}(?:\.\d{1,6})?\b',
-        r'\b\d{13}\b',
+        # Unix timestamp (10 digits starting with 1-2, i.e. 2001-2286 range)
+        # R7 fix: avoid matching phone numbers or arbitrary 10-digit numbers
+        r'\b[12]\d{9}(?:\.\d{1,6})?\b',
+        # Unix timestamp ms (13 digits starting with 1-2)
+        r'\b[12]\d{12}\b',
         # ISO 8601: 2026-06-11T03:56:00Z or with timezone
         r'\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?\b',
     ]
@@ -162,20 +164,41 @@ class DynamicContentDetector:
 
         stable = text
 
-        # Replace dates
-        for pattern, placeholder, _ in self._compiled_date:
-            stable = pattern.sub(placeholder, stable)
+        # Replace with numbered placeholders to avoid cross-contamination
+        # when multiple values of the same type exist (R3 fix)
+        for pattern, _, name in self._compiled_date:
+            counter = 0
+            def _replace_date(m, _name=name, _counter=[0]):
+                placeholder = f"{{{_name}_{_counter[0]}}}"
+                _counter[0] += 1
+                return placeholder
+            stable = pattern.sub(_replace_date, stable)
 
-        # Replace UUIDs
-        stable = self._compiled_uuid.sub('{UUID}', stable)
+        # Replace UUIDs with numbered placeholders
+        uuid_counter = [0]
+        def _replace_uuid(m):
+            placeholder = f"{{uuid_{uuid_counter[0]}}}"
+            uuid_counter[0] += 1
+            return placeholder
+        stable = self._compiled_uuid.sub(_replace_uuid, stable)
 
-        # Replace session IDs
+        # Replace session IDs with numbered placeholders
         for pattern in self._compiled_session:
-            stable = pattern.sub('{SESSION_ID}', stable)
+            session_counter = [0]
+            def _replace_session(m):
+                placeholder = f"{{session_{session_counter[0]}}}"
+                session_counter[0] += 1
+                return placeholder
+            stable = pattern.sub(_replace_session, stable)
 
-        # Replace timestamps
+        # Replace timestamps with numbered placeholders
         for pattern in self._compiled_ts:
-            stable = pattern.sub('{TIMESTAMP}', stable)
+            ts_counter = [0]
+            def _replace_ts(m):
+                placeholder = f"{{timestamp_{ts_counter[0]}}}"
+                ts_counter[0] += 1
+                return placeholder
+            stable = pattern.sub(_replace_ts, stable)
 
         return stable, fields
 
@@ -196,24 +219,11 @@ class DynamicContentDetector:
 
         result = stable_text
 
-        # Group replacements by type
-        date_idx = 0
-        uuid_idx = 0
-        session_idx = 0
-        ts_idx = 0
-
+        # Replace keyed placeholders directly (R3 fix: no more cross-contamination)
         for key, value in tail.items():
-            if key.startswith('iso_date') or key.startswith('slash_date') or \
-               key.startswith('us_date') or key.startswith('textual_date') or \
-               key.startswith('cn_date') or key.startswith('weekday_date'):
-                # Replace first occurrence of {DATE}
-                result = result.replace('{DATE}', value, 1)
-            elif key.startswith('uuid'):
-                result = result.replace('{UUID}', value, 1)
-            elif key.startswith('session'):
-                result = result.replace('{SESSION_ID}', value, 1)
-            elif key.startswith('timestamp'):
-                result = result.replace('{TIMESTAMP}', value, 1)
+            placeholder = f"{{{key}}}"
+            if placeholder in result:
+                result = result.replace(placeholder, value, 1)
 
         return result
 
@@ -476,12 +486,13 @@ def strip_dynamic_fields(messages: list[dict[str, Any]]) -> list[dict[str, Any]]
         # Remove attribution blocks from content (common in Claude Code / MiMo)
         if isinstance(cleaned_msg.get("content"), str):
             cleaned_msg["content"] = _strip_attribution_block(cleaned_msg["content"])
-            # v2: Use DynamicContentDetector to strip dynamic content from ALL messages
-            # (including system messages with embedded dates/UUIDs/session IDs)
-            stable, _ = _detector.extract_dynamic(cleaned_msg["content"])
-            # Only replace if we actually found dynamic content
-            if stable != cleaned_msg["content"]:
-                cleaned_msg["content"] = stable
+            # v2: Use DynamicContentDetector to strip dynamic content from
+            # SYSTEM messages only (prefix stability). Non-system messages
+            # keep their real dates/timestamps — only metadata keys are stripped.
+            if cleaned_msg.get("role") == "system":
+                stable, _ = _detector.extract_dynamic(cleaned_msg["content"])
+                if stable != cleaned_msg["content"]:
+                    cleaned_msg["content"] = stable
         cleaned.append(cleaned_msg)
     return cleaned
 
