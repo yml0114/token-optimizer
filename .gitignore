@@ -12,3 +12,6 @@ build/
 venv/
 env/
 *.db
+.quality_benchmark_*.out
+.realworld_*.out
+.adversarial_*.out
