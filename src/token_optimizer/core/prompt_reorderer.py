@@ -476,13 +476,12 @@ def strip_dynamic_fields(messages: list[dict[str, Any]]) -> list[dict[str, Any]]
         # Remove attribution blocks from content (common in Claude Code / MiMo)
         if isinstance(cleaned_msg.get("content"), str):
             cleaned_msg["content"] = _strip_attribution_block(cleaned_msg["content"])
-            # v2: Also use DynamicContentDetector to strip dynamic content
-            # from non-system messages (system messages are handled in reorder)
-            if cleaned_msg.get("role") != "system":
-                stable, _ = _detector.extract_dynamic(cleaned_msg["content"])
-                # Only replace if we actually found dynamic content
-                if stable != cleaned_msg["content"]:
-                    cleaned_msg["content"] = stable
+            # v2: Use DynamicContentDetector to strip dynamic content from ALL messages
+            # (including system messages with embedded dates/UUIDs/session IDs)
+            stable, _ = _detector.extract_dynamic(cleaned_msg["content"])
+            # Only replace if we actually found dynamic content
+            if stable != cleaned_msg["content"]:
+                cleaned_msg["content"] = stable
         cleaned.append(cleaned_msg)
     return cleaned
 
