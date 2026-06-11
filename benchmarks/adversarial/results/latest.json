@@ -18,7 +18,13 @@
       "qa_passed": 17,
       "qa_total": 17,
       "qa_rate": 1.0,
-      "misses": []
+      "misses": [],
+      "miss_details": [],
+      "miss_summary": {
+        "alias_gap": 0,
+        "true_loss": 0,
+        "assertion_gap": 0
+      }
     },
     {
       "id": "adv_code_rename_015",
@@ -32,7 +38,13 @@
       "qa_passed": 10,
       "qa_total": 10,
       "qa_rate": 1.0,
-      "misses": []
+      "misses": [],
+      "miss_details": [],
+      "miss_summary": {
+        "alias_gap": 0,
+        "true_loss": 0,
+        "assertion_gap": 0
+      }
     },
     {
       "id": "adv_conflict_deadline_007",
@@ -46,7 +58,13 @@
       "qa_passed": 6,
       "qa_total": 6,
       "qa_rate": 1.0,
-      "misses": []
+      "misses": [],
+      "miss_details": [],
+      "miss_summary": {
+        "alias_gap": 0,
+        "true_loss": 0,
+        "assertion_gap": 0
+      }
     },
     {
       "id": "adv_conflict_price_008",
@@ -60,7 +78,13 @@
       "qa_passed": 6,
       "qa_total": 6,
       "qa_rate": 1.0,
-      "misses": []
+      "misses": [],
+      "miss_details": [],
+      "miss_summary": {
+        "alias_gap": 0,
+        "true_loss": 0,
+        "assertion_gap": 0
+      }
     },
     {
       "id": "adv_identifier_case_018",
@@ -74,7 +98,13 @@
       "qa_passed": 6,
       "qa_total": 6,
       "qa_rate": 1.0,
-      "misses": []
+      "misses": [],
+      "miss_details": [],
+      "miss_summary": {
+        "alias_gap": 0,
+        "true_loss": 0,
+        "assertion_gap": 0
+      }
     },
     {
       "id": "adv_multilingual_020",
@@ -88,7 +118,13 @@
       "qa_passed": 10,
       "qa_total": 10,
       "qa_rate": 1.0,
-      "misses": []
+      "misses": [],
+      "miss_details": [],
+      "miss_summary": {
+        "alias_gap": 0,
+        "true_loss": 0,
+        "assertion_gap": 0
+      }
     },
     {
       "id": "adv_negation_balance_010",
@@ -102,7 +138,13 @@
       "qa_passed": 7,
       "qa_total": 7,
       "qa_rate": 1.0,
-      "misses": []
+      "misses": [],
+      "miss_details": [],
+      "miss_summary": {
+        "alias_gap": 0,
+        "true_loss": 0,
+        "assertion_gap": 0
+      }
     },
     {
       "id": "adv_negation_refund_009",
@@ -116,7 +158,13 @@
       "qa_passed": 10,
       "qa_total": 10,
       "qa_rate": 1.0,
-      "misses": []
+      "misses": [],
+      "miss_details": [],
+      "miss_summary": {
+        "alias_gap": 0,
+        "true_loss": 0,
+        "assertion_gap": 0
+      }
     },
     {
       "id": "adv_noise_incident_012",
@@ -130,7 +178,13 @@
       "qa_passed": 12,
       "qa_total": 12,
       "qa_rate": 1.0,
-      "misses": []
+      "misses": [],
+      "miss_details": [],
+      "miss_summary": {
+        "alias_gap": 0,
+        "true_loss": 0,
+        "assertion_gap": 0
+      }
     },
     {
       "id": "adv_noise_meeting_011",
@@ -144,7 +198,13 @@
       "qa_passed": 8,
       "qa_total": 8,
       "qa_rate": 1.0,
-      "misses": []
+      "misses": [],
+      "miss_details": [],
+      "miss_summary": {
+        "alias_gap": 0,
+        "true_loss": 0,
+        "assertion_gap": 0
+      }
     },
     {
       "id": "adv_paraphrase_cost_001",
@@ -158,7 +218,13 @@
       "qa_passed": 7,
       "qa_total": 7,
       "qa_rate": 1.0,
-      "misses": []
+      "misses": [],
+      "miss_details": [],
+      "miss_summary": {
+        "alias_gap": 0,
+        "true_loss": 0,
+        "assertion_gap": 0
+      }
     },
     {
       "id": "adv_paraphrase_review_002",
@@ -172,7 +238,13 @@
       "qa_passed": 7,
       "qa_total": 7,
       "qa_rate": 1.0,
-      "misses": []
+      "misses": [],
+      "miss_details": [],
+      "miss_summary": {
+        "alias_gap": 0,
+        "true_loss": 0,
+        "assertion_gap": 0
+      }
     },
     {
       "id": "adv_reorder_json_006",
@@ -186,7 +258,13 @@
       "qa_passed": 10,
       "qa_total": 10,
       "qa_rate": 1.0,
-      "misses": []
+      "misses": [],
+      "miss_details": [],
+      "miss_summary": {
+        "alias_gap": 0,
+        "true_loss": 0,
+        "assertion_gap": 0
+      }
     },
     {
       "id": "adv_reorder_owner_005",
@@ -200,7 +278,13 @@
       "qa_passed": 9,
       "qa_total": 9,
       "qa_rate": 1.0,
-      "misses": []
+      "misses": [],
+      "miss_details": [],
+      "miss_summary": {
+        "alias_gap": 0,
+        "true_loss": 0,
+        "assertion_gap": 0
+      }
     },
     {
       "id": "adv_structure_mixed_json_014",
@@ -214,7 +298,13 @@
       "qa_passed": 12,
       "qa_total": 12,
       "qa_rate": 1.0,
-      "misses": []
+      "misses": [],
+      "miss_details": [],
+      "miss_summary": {
+        "alias_gap": 0,
+        "true_loss": 0,
+        "assertion_gap": 0
+      }
     },
     {
       "id": "adv_structure_table_013",
@@ -228,7 +318,13 @@
       "qa_passed": 11,
       "qa_total": 11,
       "qa_rate": 1.0,
-      "misses": []
+      "misses": [],
+      "miss_details": [],
+      "miss_summary": {
+        "alias_gap": 0,
+        "true_loss": 0,
+        "assertion_gap": 0
+      }
     },
     {
       "id": "adv_threshold_compare_019",
@@ -242,7 +338,13 @@
       "qa_passed": 14,
       "qa_total": 14,
       "qa_rate": 1.0,
-      "misses": []
+      "misses": [],
+      "miss_details": [],
+      "miss_summary": {
+        "alias_gap": 0,
+        "true_loss": 0,
+        "assertion_gap": 0
+      }
     },
     {
       "id": "adv_unicode_currency_017",
@@ -256,7 +358,13 @@
       "qa_passed": 10,
       "qa_total": 10,
       "qa_rate": 1.0,
-      "misses": []
+      "misses": [],
+      "miss_details": [],
+      "miss_summary": {
+        "alias_gap": 0,
+        "true_loss": 0,
+        "assertion_gap": 0
+      }
     },
     {
       "id": "adv_units_budget_003",
@@ -270,7 +378,13 @@
       "qa_passed": 7,
       "qa_total": 7,
       "qa_rate": 1.0,
-      "misses": []
+      "misses": [],
+      "miss_details": [],
+      "miss_summary": {
+        "alias_gap": 0,
+        "true_loss": 0,
+        "assertion_gap": 0
+      }
     },
     {
       "id": "adv_units_latency_004",
@@ -284,7 +398,13 @@
       "qa_passed": 7,
       "qa_total": 7,
       "qa_rate": 1.0,
-      "misses": []
+      "misses": [],
+      "miss_details": [],
+      "miss_summary": {
+        "alias_gap": 0,
+        "true_loss": 0,
+        "assertion_gap": 0
+      }
     }
   ]
 }

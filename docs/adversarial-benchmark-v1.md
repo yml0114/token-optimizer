@@ -1,15 +1,36 @@
-# v2.13 Evaluator Alias Normalization
+# v2.15 Semantic Assertion Schema
 
 ## Summary
 
-`token-optimizer` v2.13 improves the benchmark evaluator, not the compressor.
+`token-optimizer` v2.15 upgrades the adversarial benchmark evaluator output from a plain keyword-group checker into a minimal semantic assertion schema.
 
-The v2.11 adversarial suite originally reported two missed QA checks. Manual inspection showed both facts were preserved in the compressed output:
+This release still does **not** change the compressor. It changes the adversarial runner so future failures can be diagnosed before anyone tunes compression behavior.
 
-1. `adv_units_budget_003` preserved `nine hundred USD`, but the evaluator did not treat it as equivalent to `900`.
-2. `adv_noise_meeting_011` preserved `30 real-world cases`, but the evaluator did not treat it as equivalent to `30 cases`.
+## What changed
 
-v2.13 fixes these evaluator alias gaps in `quality_benchmark.py`.
+`benchmarks/adversarial/run_adversarial.py` now supports:
+
+1. Backward-compatible legacy `qa_groups` conversion.
+2. New explicit `qa_assertions` schema for future adversarial cases.
+3. Per-miss diagnostic fields:
+   - `miss_details`
+   - `miss_summary`
+4. Miss classification buckets:
+   - `alias_gap`
+   - `true_loss`
+   - `assertion_gap`
+
+Existing adversarial cases do not need to be rewritten. If a case only has `qa_groups`, each group is converted into an `any_of` assertion.
+
+## Supported assertion types
+
+| Type | Meaning | Miss classification |
+|---|---|---|
+| `present` | one required value or alias group must appear | `true_loss` |
+| `any_of` | any value in an alias group may satisfy the fact | `alias_gap` when missed and multiple aliases exist |
+| `all_of` | every listed fact must appear independently | `true_loss` |
+| `latest_value` | the current/latest corrected value must appear | `true_loss` |
+| unsupported type | schema/evaluator cannot interpret the assertion | `assertion_gap` |
 
 ## Latest adversarial result
 
@@ -20,48 +41,33 @@ v2.13 fixes these evaluator alias gaps in `quality_benchmark.py`.
 | QA rate | 100.0% |
 | Perfect cases | 20/20 |
 | Failed cases | 0 |
+| alias_gap | 0 |
+| true_loss | 0 |
+| assertion_gap | 0 |
 
-## Category breakdown
+## Why this matters
 
-| Category | Cases | QA | Failed cases |
-|---|---:|---:|---:|
-| code_semantics | 2 | 27/27 | 0 |
-| comparison_conditions | 1 | 14/14 | 0 |
-| conflict_update | 2 | 12/12 | 0 |
-| identifier_variants | 1 | 6/6 | 0 |
-| long_noise | 2 | 20/20 | 0 |
-| multilingual_noise | 1 | 10/10 | 0 |
-| negation | 2 | 17/17 | 0 |
-| order_shuffle | 2 | 19/19 | 0 |
-| paraphrase | 2 | 14/14 | 0 |
-| structure_mixed | 2 | 23/23 | 0 |
-| unit_variants | 3 | 24/24 | 0 |
+Before v2.15, a miss was only a string such as:
 
-## Failed / boundary cases
+```text
+30 real-world cases/30 cases
+```
 
-| Case | Category | QA | Misses |
-|---|---|---:|---|
-| none | - | - | - |
+That was not enough to know whether the system had:
 
-## What changed
+1. truly lost a fact;
+2. preserved the fact but used an unrecognized alias;
+3. exposed a weak or unsupported assertion design.
 
-The evaluator now recognizes:
-
-- simple English number words: `zero` through `ninety`, plus `<number> hundred`;
-- same-number same-object aliases such as `30 real-world cases` and `30 cases`.
-
-This keeps the benchmark honest: the compressor is not rewarded for losing facts,
-but it is also not penalized when it preserves a fact using an equivalent surface form.
-
-## What did not change
-
-The compressor was not modified in this release. v2.13 is strictly an evaluator quality improvement.
+v2.15 makes this distinction explicit in the result JSON. That keeps future work honest: compressor changes should be driven by `true_loss`, not by `alias_gap` or `assertion_gap`.
 
 ## Validation commands
 
 ```bash
+PYTHONPATH=src:. python3 -m pytest tests/test_adversarial_assertions.py tests/test_quality_benchmark_evaluator.py
 python3 benchmarks/adversarial/run_adversarial.py --min-rate 1.0
 python3 benchmarks/realworld/run_realworld.py
+PYTHONPATH=src python3 -m pytest
 python3 quality_benchmark.py
 python3 -m compileall -q src quality_benchmark.py benchmarks tests
 ```
@@ -71,3 +77,7 @@ Latest structured output:
 ```text
 benchmarks/adversarial/results/latest.json
 ```
+
+## What did not change
+
+The compressor was not modified in this release. v2.15 is strictly an evaluator and benchmark-diagnostics improvement.

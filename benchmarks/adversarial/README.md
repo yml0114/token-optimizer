@@ -21,6 +21,7 @@ Its purpose is to expose factual-retention boundaries under harder input conditi
 - QA checks: 186/186 (100.0%)
 - Perfect cases: 20/20
 - Failed cases: 0
+- Miss classification: alias_gap=0, true_loss=0, assertion_gap=0
 
 ## Category breakdown
 
@@ -66,7 +67,7 @@ benchmarks/adversarial/results/latest.json
 
 ## Evaluator policy
 
-A `qa_groups` entry represents acceptable aliases for the same fact. The benchmark
+A legacy `qa_groups` entry represents acceptable aliases for the same fact. The benchmark
 evaluator therefore treats obvious aliases as OR conditions while still requiring
 distinct facts to be present. Supported alias normalization includes:
 
@@ -75,10 +76,31 @@ distinct facts to be present. Supported alias normalization includes:
 - simple English number words such as `nine hundred` / `900`;
 - same-number same-object phrases such as `30 real-world cases` / `30 cases`.
 
+## Semantic assertion schema
+
+The runner also supports explicit `qa_assertions` for new adversarial cases. If a case
+contains `qa_assertions`, the runner uses them directly. Otherwise it converts legacy
+`qa_groups` into `any_of` assertions, preserving backward compatibility.
+
+Supported assertion types:
+
+| Type | Meaning | Miss classification |
+|---|---|---|
+| `present` | one required value or alias group must appear | `true_loss` |
+| `any_of` | any value in an alias group may satisfy the fact | `alias_gap` when missed and multiple aliases exist |
+| `all_of` | every listed fact must appear independently | `true_loss` |
+| `latest_value` | the current/latest corrected value must appear | `true_loss` |
+| unsupported type | schema/evaluator cannot interpret the assertion | `assertion_gap` |
+
+Each failed row now includes:
+
+- `miss_details`: per-miss label, assertion type, missing values and classification;
+- `miss_summary`: counts for `alias_gap`, `true_loss` and `assertion_gap`.
+
 Do not immediately tune compressor rules just to make this suite green.
 Failures should first be classified as one of:
 
-1. real factual-retention weakness;
-2. weak keyword assertion;
-3. semantic equivalence not captured by keyword matching;
+1. real factual-retention weakness (`true_loss`);
+2. weak or unsupported assertion design (`assertion_gap`);
+3. semantic equivalence not captured by alias matching (`alias_gap`);
 4. acceptable compression trade-off.
