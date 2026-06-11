@@ -23,7 +23,7 @@ class CompressionQuality:
 
     passed: bool | None = None
     miss_summary: dict[str, int] = field(
-        default_factory=lambda: {"alias_gap": 0, "true_loss": 0, "assertion_gap": 0}
+        default_factory=lambda: {"entity_loss": 0, "number_loss": 0, "structure_loss": 0}
     )
     warnings: list[str] = field(default_factory=list)
 

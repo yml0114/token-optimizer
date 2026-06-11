@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "src
 from token_optimizer.core.adaptive_compressor import AdaptiveCompressor
 from token_optimizer.core.near_dedup import NearDeduplicator
 from token_optimizer.core.ratio_selector import get_compression_plan
+from token_optimizer.evaluator import entity_recall, number_precision, structural_preservation
 
 try:
     import tiktoken
@@ -295,35 +296,6 @@ def keyword_recall(original, compressed, keywords):
     return len(missing) == 0, missing
 
 
-def entity_coverage(original, compressed):
-    pattern = r'\b[A-Z][a-zA-Z]+\b|\b\d[\d,.]*\b|\b[a-zA-Z]+\d+\b'
-    orig = set(re.findall(pattern, original))
-    comp = set(re.findall(pattern, compressed))
-    if not orig:
-        return 1.0
-    return len(orig & comp) / len(orig)
-
-
-def number_precision(original, compressed):
-    pattern = r'\b\d[\d,.]*\b'
-    orig = set(re.findall(pattern, original))
-    comp = set(re.findall(pattern, compressed))
-    if not orig:
-        return 1.0
-    return len(orig & comp) / len(orig)
-
-
-def structural_preservation(original, compressed):
-    chars = ['{', '}', '[', ']', '":', "':"]
-    scores = []
-    for ch in chars:
-        oc = original.count(ch)
-        if oc == 0:
-            continue
-        scores.append(min(compressed.count(ch), oc) / oc)
-    return sum(scores) / max(len(scores), 1)
-
-
 def qa_answer_check(compressed_text, questions):
     correct = 0
     details = []
@@ -402,7 +374,7 @@ def run_quality_bench():
         results = []
         for label, result, info in [("adaptive", a_result, a_info), ("fixed_0.4", f_result, f_info)]:
             ct = extract_context_text(result)
-            ent = entity_coverage(original_text, ct)
+            ent = entity_recall(original_text, ct)
             num = number_precision(original_text, ct)
             struct = structural_preservation(original_text, ct)
             qa_ok, qa_tot, qa_det = qa_answer_check(ct, questions)

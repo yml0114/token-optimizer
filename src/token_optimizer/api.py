@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Iterable
 
 from token_optimizer.core.adaptive_compressor import AdaptiveCompressor, ContentType
+from token_optimizer.evaluator import evaluate_quality
 from token_optimizer.types import CompressionMode, CompressionQuality, CompressionResult
 
 _MODE_KEEP_RATIO: dict[CompressionMode, float] = {
@@ -84,6 +85,12 @@ def compress_text(
     compressed = compressed_messages[0].get("content", "") if compressed_messages else ""
     compressed_tokens = _estimate_tokens(compressed)
     warnings = _risk_warnings(mode=normalized_mode, content_type=detected_type, preserve=preserve)
+    eval_result = evaluate_quality(text, compressed)
+    quality = CompressionQuality(
+        passed=eval_result.passed,
+        miss_summary=eval_result.to_miss_summary(),
+        warnings=warnings,
+    )
 
     return CompressionResult(
         compressed=compressed,
@@ -94,5 +101,5 @@ def compress_text(
         mode=normalized_mode,
         content_type=detected_type,
         warnings=warnings,
-        quality=CompressionQuality(passed=None, warnings=warnings),
+        quality=quality,
     )

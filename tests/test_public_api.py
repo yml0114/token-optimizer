@@ -21,7 +21,7 @@ def test_compress_text_returns_stable_result_shape():
     assert result.mode == "safe"
     assert result.content_type == "memory"
     assert result.method == "adaptive"
-    assert result.quality.miss_summary == {"alias_gap": 0, "true_loss": 0, "assertion_gap": 0}
+    assert result.quality.miss_summary == {"entity_loss": 0, "number_loss": 0, "structure_loss": 0}
 
 
 def test_compress_text_budget_can_lower_keep_ratio():
