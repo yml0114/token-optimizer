@@ -1,0 +1,46 @@
+{
+  "id": "adv_paraphrase_cost_001",
+  "category": "paraphrase",
+  "title": "Projected charge synonym for estimated_cost",
+  "attack": "same meaning with different business wording",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You preserve billing facts from product requirements."
+    },
+    {
+      "role": "user",
+      "content": "Billing rule update: before calling the model, calculate the projected charge for the request. If wallet balance is below the projected charge, stop execution before provider invocation. Membership remains ¥19.9/month with 35,000 credits. Extra pack: ¥10 for 20,000 credits. Do not use the old field name estimated_cost in the UI copy; PM wants 'projected charge'."
+    },
+    {
+      "role": "assistant",
+      "content": "Captured: block before provider invocation if balance is below projected charge; membership and extra credit prices unchanged."
+    }
+  ],
+  "qa_groups": [
+    [
+      "projected charge"
+    ],
+    [
+      "provider invocation"
+    ],
+    [
+      "19.9"
+    ],
+    [
+      "35,000",
+      "35000"
+    ],
+    [
+      "10"
+    ],
+    [
+      "20,000",
+      "20000"
+    ],
+    [
+      "estimated_cost"
+    ]
+  ],
+  "notes": "Tests whether synonym wording is preserved without only relying on known snake_case fields."
+}

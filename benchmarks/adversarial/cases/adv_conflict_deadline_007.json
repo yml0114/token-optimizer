@@ -1,0 +1,45 @@
+{
+  "id": "adv_conflict_deadline_007",
+  "category": "conflict_update",
+  "title": "Deadline corrected later",
+  "attack": "must preserve latest correction and old conflicting value",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You track changing project plans."
+    },
+    {
+      "role": "user",
+      "content": "Initial plan: Mnemos benchmark refresh owner Liang, deadline Jun 18, target +15 points."
+    },
+    {
+      "role": "assistant",
+      "content": "Initial deadline Jun 18."
+    },
+    {
+      "role": "user",
+      "content": "Correction: Jun 18 is obsolete. Final deadline is Jun 21 because LongMemEval data arrives late. Keep owner Liang and target +15 points."
+    }
+  ],
+  "qa_groups": [
+    [
+      "Jun 18"
+    ],
+    [
+      "obsolete"
+    ],
+    [
+      "Jun 21"
+    ],
+    [
+      "LongMemEval"
+    ],
+    [
+      "Liang"
+    ],
+    [
+      "15"
+    ]
+  ],
+  "semantic_expectation": "A future semantic evaluator should identify Jun 21 as final deadline."
+}

@@ -1,0 +1,48 @@
+{
+  "id": "adv_noise_meeting_011",
+  "category": "long_noise",
+  "title": "Noisy meeting with final decisions",
+  "attack": "filler and reversals around key facts",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You summarize noisy meetings."
+    },
+    {
+      "role": "user",
+      "content": "Okay random notes first: coffee budget is irrelevant, ignore the joke about migrating everything to spreadsheets. Real decision: Token Optimizer v3 benchmark must finish before semantic compressor design starts. Someone said Jun 20, then corrected it: final benchmark deadline is Jun 25. Owner Chen. Need at least 30 real-world cases. Budget is still $900, not the joking $9,000 number."
+    },
+    {
+      "role": "assistant",
+      "content": "Final: Chen owns Token Optimizer v3 benchmark, deadline Jun 25, 30 real-world cases, $900 budget, before semantic compressor design."
+    }
+  ],
+  "qa_groups": [
+    [
+      "semantic compressor"
+    ],
+    [
+      "Jun 20"
+    ],
+    [
+      "Jun 25"
+    ],
+    [
+      "Chen"
+    ],
+    [
+      "30 real-world cases",
+      "30 cases"
+    ],
+    [
+      "900"
+    ],
+    [
+      "9,000",
+      "9000"
+    ],
+    [
+      "spreadsheets"
+    ]
+  ]
+}

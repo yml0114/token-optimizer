@@ -1,0 +1,47 @@
+{
+  "id": "adv_conflict_price_008",
+  "category": "conflict_update",
+  "title": "Price changed after initial quote",
+  "attack": "updated price and old price both appear",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You preserve pricing changes."
+    },
+    {
+      "role": "user",
+      "content": "Draft pricing said Enterprise implementation fee was $1,500 and annual minimum was $12,000."
+    },
+    {
+      "role": "assistant",
+      "content": "Draft captured."
+    },
+    {
+      "role": "user",
+      "content": "Final change from sales: implementation fee is now $1,800, annual minimum remains $12,000, and security review must finish before workspace_activation."
+    }
+  ],
+  "qa_groups": [
+    [
+      "1,500",
+      "1500"
+    ],
+    [
+      "1,800",
+      "1800"
+    ],
+    [
+      "12,000",
+      "12000"
+    ],
+    [
+      "security review"
+    ],
+    [
+      "workspace_activation"
+    ],
+    [
+      "Final change"
+    ]
+  ]
+}

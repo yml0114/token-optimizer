@@ -1,0 +1,52 @@
+{
+  "id": "adv_negation_refund_009",
+  "category": "negation",
+  "title": "No refund after cancellation condition",
+  "attack": "critical negation preservation",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You preserve policy exceptions."
+    },
+    {
+      "role": "user",
+      "content": "Refund policy: refund 100% only if provider_error=true. Refund 50% if latency exceeds 120s and output_tokens < 200. Important exception: do not refund if user_cancelled=true after model_started_at, even if latency later exceeds 120s. If refund_count >= 3 in 24h, require support_review."
+    },
+    {
+      "role": "assistant",
+      "content": "Do not refund after user cancellation once model started; abuse threshold 3 refunds per 24h."
+    }
+  ],
+  "qa_groups": [
+    [
+      "do not refund"
+    ],
+    [
+      "user_cancelled"
+    ],
+    [
+      "model_started_at"
+    ],
+    [
+      "120s"
+    ],
+    [
+      "output_tokens"
+    ],
+    [
+      "200"
+    ],
+    [
+      "refund_count"
+    ],
+    [
+      "3"
+    ],
+    [
+      "24h"
+    ],
+    [
+      "support_review"
+    ]
+  ]
+}

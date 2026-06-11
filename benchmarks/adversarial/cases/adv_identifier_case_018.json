@@ -1,0 +1,40 @@
+{
+  "id": "adv_identifier_case_018",
+  "category": "identifier_variants",
+  "title": "Case-sensitive identifiers",
+  "attack": "similar identifiers with case changes",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You preserve exact identifiers."
+    },
+    {
+      "role": "user",
+      "content": "Do not confuse WorkspaceID with workspace_id. Frontend prop is WorkspaceID, API field is workspace_id, database column is workspaceId, and audit event is workspace.exported.v2. Export job id example: exp_20260611_ABcd42. Region: us-east-1."
+    },
+    {
+      "role": "assistant",
+      "content": "Exact identifiers: WorkspaceID, workspace_id, workspaceId, workspace.exported.v2, exp_20260611_ABcd42, us-east-1."
+    }
+  ],
+  "qa_groups": [
+    [
+      "WorkspaceID"
+    ],
+    [
+      "workspace_id"
+    ],
+    [
+      "workspaceId"
+    ],
+    [
+      "workspace.exported.v2"
+    ],
+    [
+      "exp_20260611_ABcd42"
+    ],
+    [
+      "us-east-1"
+    ]
+  ]
+}

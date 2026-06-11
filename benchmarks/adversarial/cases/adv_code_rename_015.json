@@ -1,0 +1,52 @@
+{
+  "id": "adv_code_rename_015",
+  "category": "code_semantics",
+  "title": "Function renamed in follow-up",
+  "attack": "code symbol update after original patch",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You review code changes."
+    },
+    {
+      "role": "user",
+      "content": "Old function was deleteWorkspace(req,res). New patch renames it to archiveWorkspace(req,res). Security requirement is unchanged: check role in ['owner','admin'], require confirmToken for enterprise plan, write deleted_at instead of hard delete, and limit to 3 archive operations/hour/user."
+    },
+    {
+      "role": "assistant",
+      "content": "archiveWorkspace replaces deleteWorkspace; owner/admin role check, enterprise confirmToken, deleted_at soft delete, 3/hour/user limit."
+    }
+  ],
+  "qa_groups": [
+    [
+      "deleteWorkspace"
+    ],
+    [
+      "archiveWorkspace"
+    ],
+    [
+      "owner"
+    ],
+    [
+      "admin"
+    ],
+    [
+      "confirmToken"
+    ],
+    [
+      "enterprise"
+    ],
+    [
+      "deleted_at"
+    ],
+    [
+      "hard delete"
+    ],
+    [
+      "3"
+    ],
+    [
+      "hour"
+    ]
+  ]
+}

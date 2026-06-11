@@ -1,0 +1,44 @@
+{
+  "id": "adv_units_latency_004",
+  "category": "unit_variants",
+  "title": "Latency threshold represented as 2 minutes",
+  "attack": "time unit variants",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You preserve refund rules."
+    },
+    {
+      "role": "user",
+      "content": "Refund rule: refund 50% when the model call takes more than two minutes and produces fewer than 200 output tokens. Engineering note: this is equivalent to latency_ms > 120000, but support agents will say 'over 2 minutes'. Full refund still requires provider_error=true and a valid request_id."
+    },
+    {
+      "role": "assistant",
+      "content": "Half refund for over two minutes and <200 output tokens; full refund for provider_error with request_id."
+    }
+  ],
+  "qa_groups": [
+    [
+      "50%"
+    ],
+    [
+      "two minutes",
+      "2 minutes"
+    ],
+    [
+      "200"
+    ],
+    [
+      "latency_ms"
+    ],
+    [
+      "120000"
+    ],
+    [
+      "provider_error"
+    ],
+    [
+      "request_id"
+    ]
+  ]
+}

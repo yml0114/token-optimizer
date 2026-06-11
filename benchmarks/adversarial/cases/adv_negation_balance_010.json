@@ -1,0 +1,44 @@
+{
+  "id": "adv_negation_balance_010",
+  "category": "negation",
+  "title": "Never allow negative balance",
+  "attack": "negative rule with distracting positive examples",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You preserve billing invariants."
+    },
+    {
+      "role": "user",
+      "content": "Users can buy extra credits, receive refunds, and apply promo coupons. But invariant B-17 is absolute: never allow negative balance. If balance is below projected charge, block before model call. Do not create debt rows to compensate. Trial users receive 1,000 credits expiring in 7 days."
+    },
+    {
+      "role": "assistant",
+      "content": "Invariant B-17: never allow negative balance; block before model call if below projected charge."
+    }
+  ],
+  "qa_groups": [
+    [
+      "B-17"
+    ],
+    [
+      "never allow negative balance"
+    ],
+    [
+      "projected charge"
+    ],
+    [
+      "block before model call"
+    ],
+    [
+      "debt rows"
+    ],
+    [
+      "1,000",
+      "1000"
+    ],
+    [
+      "7 days"
+    ]
+  ]
+}

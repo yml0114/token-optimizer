@@ -1,0 +1,65 @@
+{
+  "id": "adv_threshold_compare_019",
+  "category": "comparison_conditions",
+  "title": "Multiple comparison operators",
+  "attack": "dense threshold conditions",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You preserve alert thresholds."
+    },
+    {
+      "role": "user",
+      "content": "Alert rules: page SRE if p99_latency_ms >= 900 for 10 minutes, warn if error_rate > 1.5% for 5 minutes, suppress if traffic_rps < 20, and auto-scale if cpu_utilization >= 72% AND queue_depth > 500. Do not page during maintenance_window=true."
+    },
+    {
+      "role": "assistant",
+      "content": "Thresholds: p99 >=900/10m, error_rate >1.5%/5m, suppress traffic <20, scale cpu >=72 and queue >500, no page during maintenance."
+    }
+  ],
+  "qa_groups": [
+    [
+      "p99_latency_ms"
+    ],
+    [
+      ">= 900",
+      "900"
+    ],
+    [
+      "10 minutes"
+    ],
+    [
+      "error_rate"
+    ],
+    [
+      "1.5%"
+    ],
+    [
+      "5 minutes"
+    ],
+    [
+      "traffic_rps"
+    ],
+    [
+      "20"
+    ],
+    [
+      "cpu_utilization"
+    ],
+    [
+      "72%"
+    ],
+    [
+      "queue_depth"
+    ],
+    [
+      "500"
+    ],
+    [
+      "maintenance_window"
+    ],
+    [
+      "true"
+    ]
+  ]
+}

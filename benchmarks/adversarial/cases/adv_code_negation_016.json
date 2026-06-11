@@ -1,0 +1,73 @@
+{
+  "id": "adv_code_negation_016",
+  "category": "code_semantics",
+  "title": "Do not retry unsafe status codes",
+  "attack": "negative retry requirements in code review",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You preserve SDK retry rules."
+    },
+    {
+      "role": "user",
+      "content": "SDK retry policy: retry 429 and 503 with exponential backoff. base_delay_ms=250, max_delay_ms=4000, max_attempts=4. Do not retry 400, 401, or 403. Preserve X-RateLimit-Limit, X-RateLimit-Remaining, and X-RateLimit-Reset headers in thrown errors. Minimum SDK version 1.8.0."
+    },
+    {
+      "role": "assistant",
+      "content": "Retry only 429/503; do not retry 400/401/403; backoff parameters and rate limit headers recorded."
+    }
+  ],
+  "qa_groups": [
+    [
+      "429"
+    ],
+    [
+      "503"
+    ],
+    [
+      "exponential backoff"
+    ],
+    [
+      "base_delay_ms"
+    ],
+    [
+      "250"
+    ],
+    [
+      "max_delay_ms"
+    ],
+    [
+      "4000"
+    ],
+    [
+      "max_attempts"
+    ],
+    [
+      "4"
+    ],
+    [
+      "Do not retry"
+    ],
+    [
+      "400"
+    ],
+    [
+      "401"
+    ],
+    [
+      "403"
+    ],
+    [
+      "X-RateLimit-Limit"
+    ],
+    [
+      "X-RateLimit-Remaining"
+    ],
+    [
+      "X-RateLimit-Reset"
+    ],
+    [
+      "1.8.0"
+    ]
+  ]
+}

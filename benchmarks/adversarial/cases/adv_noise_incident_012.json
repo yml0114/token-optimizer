@@ -1,0 +1,59 @@
+{
+  "id": "adv_noise_incident_012",
+  "category": "long_noise",
+  "title": "Incident with noisy chatter",
+  "attack": "incident facts mixed with irrelevant chatter",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You preserve incident facts."
+    },
+    {
+      "role": "user",
+      "content": "Incident notes, with noise: someone pasted lunch orders, ignore that. Incident ID INC-AUTH-4421 started 16:08 UTC. Login success rate fell to 91.4%. Impact was 7,820 failed logins. Root cause: JWKS cache used kid=old-17 after rotation. Mitigation: forced JWKS refresh and pinned kid=new-18. Owner Omar. Follow-up: add alert if stale_jwks_age_seconds > 300 for 3 minutes."
+    },
+    {
+      "role": "assistant",
+      "content": "Auth incident INC-AUTH-4421 at 16:08 UTC, 91.4%, 7,820 failed logins, stale JWKS kid old-17/new-18, Omar owner."
+    }
+  ],
+  "qa_groups": [
+    [
+      "INC-AUTH-4421"
+    ],
+    [
+      "16:08"
+    ],
+    [
+      "91.4%"
+    ],
+    [
+      "7,820",
+      "7820"
+    ],
+    [
+      "JWKS"
+    ],
+    [
+      "old-17"
+    ],
+    [
+      "new-18"
+    ],
+    [
+      "Omar"
+    ],
+    [
+      "stale_jwks_age_seconds"
+    ],
+    [
+      "300"
+    ],
+    [
+      "3 minutes"
+    ],
+    [
+      "lunch orders"
+    ]
+  ]
+}

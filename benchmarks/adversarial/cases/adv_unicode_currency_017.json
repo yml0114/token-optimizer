@@ -1,0 +1,58 @@
+{
+  "id": "adv_unicode_currency_017",
+  "category": "unit_variants",
+  "title": "Mixed currency and unicode arrows",
+  "attack": "unicode symbols and mixed currency",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You preserve international billing specs."
+    },
+    {
+      "role": "user",
+      "content": "Streaming translation target zh-CN→en-US p95 must stay below 650ms. Monthly membership is ¥19.9. EU add-on is €4.99 for 12,000 credits. US add-on is $5.49 for 13,500 credits. FX refresh job runs every 6h. Owner: Ana García."
+    },
+    {
+      "role": "assistant",
+      "content": "Preserved zh-CN→en-US latency target, CNY/EUR/USD add-ons, 6h FX refresh, Ana García owner."
+    }
+  ],
+  "qa_groups": [
+    [
+      "zh-CN→en-US",
+      "zh-CN"
+    ],
+    [
+      "650ms"
+    ],
+    [
+      "¥19.9",
+      "19.9"
+    ],
+    [
+      "€4.99",
+      "4.99"
+    ],
+    [
+      "12,000",
+      "12000"
+    ],
+    [
+      "$5.49",
+      "5.49"
+    ],
+    [
+      "13,500",
+      "13500"
+    ],
+    [
+      "6h"
+    ],
+    [
+      "Ana"
+    ],
+    [
+      "García"
+    ]
+  ]
+}

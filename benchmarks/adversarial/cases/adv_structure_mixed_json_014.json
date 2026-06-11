@@ -1,0 +1,58 @@
+{
+  "id": "adv_structure_mixed_json_014",
+  "category": "structure_mixed",
+  "title": "Mixed bullet list and JSON",
+  "attack": "semi-structured plus JSON payload",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You preserve API contract specs."
+    },
+    {
+      "role": "user",
+      "content": "Contract notes:\n- endpoint: POST /v1/workspaces/{workspace_id}/export\n- auth: owner or admin only\n- rate limit: 3 exports/hour/user\nPayload example: {\"workspace_id\":\"ws_8842\",\"format\":\"parquet\",\"include_deleted\":false,\"expires_in_seconds\":86400}\nNever include secrets.json in export archives."
+    },
+    {
+      "role": "assistant",
+      "content": "Export endpoint requires owner/admin, rate limit 3/hour/user, workspace ws_8842, parquet, include_deleted false, expiry 86400, exclude secrets.json."
+    }
+  ],
+  "qa_groups": [
+    [
+      "POST /v1/workspaces"
+    ],
+    [
+      "workspace_id"
+    ],
+    [
+      "owner"
+    ],
+    [
+      "admin"
+    ],
+    [
+      "3 exports"
+    ],
+    [
+      "hour"
+    ],
+    [
+      "ws_8842"
+    ],
+    [
+      "parquet"
+    ],
+    [
+      "include_deleted"
+    ],
+    [
+      "false"
+    ],
+    [
+      "86400"
+    ],
+    [
+      "secrets.json"
+    ]
+  ]
+}

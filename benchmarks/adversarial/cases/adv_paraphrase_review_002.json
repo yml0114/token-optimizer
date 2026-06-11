@@ -1,0 +1,43 @@
+{
+  "id": "adv_paraphrase_review_002",
+  "category": "paraphrase",
+  "title": "Human approval synonym for manual_review",
+  "attack": "same control described without snake_case",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You preserve risk-control requirements."
+    },
+    {
+      "role": "user",
+      "content": "Risk workflow: if risk score reaches 0.85 or higher, do not auto-charge the customer. Route the event to a human approval queue owned by TrustOps. The legacy API field is manual_review_required, but the product copy must say 'human approval'. Retry webhook delivery 5 times over 30 minutes."
+    },
+    {
+      "role": "assistant",
+      "content": "Need human approval at risk score >=0.85, TrustOps owns queue, webhook retry policy unchanged."
+    }
+  ],
+  "qa_groups": [
+    [
+      "0.85"
+    ],
+    [
+      "human approval"
+    ],
+    [
+      "TrustOps"
+    ],
+    [
+      "manual_review_required"
+    ],
+    [
+      "5"
+    ],
+    [
+      "30 minutes"
+    ],
+    [
+      "auto-charge"
+    ]
+  ]
+}

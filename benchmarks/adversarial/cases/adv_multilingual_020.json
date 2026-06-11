@@ -1,0 +1,56 @@
+{
+  "id": "adv_multilingual_020",
+  "category": "multilingual_noise",
+  "title": "Chinese English mixed facts",
+  "attack": "mixed language factual preservation",
+  "messages": [
+    {
+      "role": "system",
+      "content": "你负责保留中英混合需求里的关键事实。"
+    },
+    {
+      "role": "user",
+      "content": "不尬 Unfaze iOS 版本：首屏启动 p95 < 1.2s，流式翻译 zh-CN→ja-JP p95 < 720ms。负责人 Ana，截止 Jul 2。注意：不要把 beta 用户的免费额度从 1,000 credits 改成 10,000，这只是用户建议，最终规则仍是 1,000 credits，有效期 7 days。"
+    },
+    {
+      "role": "assistant",
+      "content": "Unfaze iOS: launch p95 <1.2s, streaming zh-CN→ja-JP p95 <720ms, Ana by Jul 2, beta free quota remains 1,000 credits for 7 days."
+    }
+  ],
+  "qa_groups": [
+    [
+      "不尬",
+      "Unfaze"
+    ],
+    [
+      "iOS"
+    ],
+    [
+      "1.2s"
+    ],
+    [
+      "zh-CN→ja-JP",
+      "ja-JP"
+    ],
+    [
+      "720ms"
+    ],
+    [
+      "Ana"
+    ],
+    [
+      "Jul 2"
+    ],
+    [
+      "1,000",
+      "1000"
+    ],
+    [
+      "10,000",
+      "10000"
+    ],
+    [
+      "7 days"
+    ]
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "id": "adv_reorder_owner_005",
+  "category": "order_shuffle",
+  "title": "Facts split across turns and reordered",
+  "attack": "owner/deadline/budget scattered across multiple messages",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You track project handoffs."
+    },
+    {
+      "role": "user",
+      "content": "Final gate is webhook_success_rate >= 99.9%. Do not launch if crash_free_sessions is below 99.5%."
+    },
+    {
+      "role": "assistant",
+      "content": "Launch gate depends on webhook success and crash-free sessions."
+    },
+    {
+      "role": "user",
+      "content": "Owner details were scattered: Backend billing is Ravi, iOS build is Ana, docs is Mei. Deadlines are not in that order: docs Jul 6, billing Jul 5, iOS Jul 8. Stripe replay must cover 50 cases."
+    }
+  ],
+  "qa_groups": [
+    [
+      "99.9%"
+    ],
+    [
+      "99.5%"
+    ],
+    [
+      "Ravi"
+    ],
+    [
+      "Ana"
+    ],
+    [
+      "Mei"
+    ],
+    [
+      "Jul 6"
+    ],
+    [
+      "Jul 5"
+    ],
+    [
+      "Jul 8"
+    ],
+    [
+      "50 cases"
+    ]
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "id": "adv_units_budget_003",
+  "category": "unit_variants",
+  "title": "Budget represented as 4.5k dollars",
+  "attack": "currency unit variants",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You summarize meeting budgets."
+    },
+    {
+      "role": "user",
+      "content": "Budget recap: Mnemos gets 1.2k dollars, Token Optimizer gets nine hundred USD, and Unfaze gets 2,400 dollars. The combined budget is 4.5k dollars. Keep the total as the source of truth even if someone later says 'about five thousand'. Owner for finance reconciliation: Mira Chen, deadline Jul 9."
+    },
+    {
+      "role": "assistant",
+      "content": "Total budget is 4.5k dollars; Mira owns reconciliation by Jul 9."
+    }
+  ],
+  "qa_groups": [
+    [
+      "1.2k"
+    ],
+    [
+      "nine hundred",
+      "900"
+    ],
+    [
+      "2,400",
+      "2400"
+    ],
+    [
+      "4.5k"
+    ],
+    [
+      "Mira",
+      "Chen"
+    ],
+    [
+      "Jul 9"
+    ],
+    [
+      "about five thousand"
+    ]
+  ]
+}

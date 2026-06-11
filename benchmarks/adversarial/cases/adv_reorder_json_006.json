@@ -1,0 +1,52 @@
+{
+  "id": "adv_reorder_json_006",
+  "category": "order_shuffle",
+  "title": "JSON facts explained before payload",
+  "attack": "narrative before nested JSON",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You preserve API response facts."
+    },
+    {
+      "role": "user",
+      "content": "The important values are the invoice id, region, and final total. Ignore display order. Payload follows later. Final total is 17.37 USD after promo adjustment -3.20. Region is ap-southeast-1. Now payload: {\"customer\":{\"id\":\"cus_7719\",\"plan\":\"pro\"},\"invoice\":{\"id\":\"inv_20260611_8842\",\"usage\":{\"input\":1287340,\"output\":348902},\"tax\":2.15}}"
+    },
+    {
+      "role": "assistant",
+      "content": "Invoice inv_20260611_8842 for cus_7719 in ap-southeast-1 totals 17.37 USD."
+    }
+  ],
+  "qa_groups": [
+    [
+      "inv_20260611_8842"
+    ],
+    [
+      "ap-southeast-1"
+    ],
+    [
+      "17.37"
+    ],
+    [
+      "USD"
+    ],
+    [
+      "-3.20"
+    ],
+    [
+      "cus_7719"
+    ],
+    [
+      "pro"
+    ],
+    [
+      "1287340"
+    ],
+    [
+      "348902"
+    ],
+    [
+      "2.15"
+    ]
+  ]
+}

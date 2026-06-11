@@ -1,0 +1,55 @@
+{
+  "id": "adv_structure_table_013",
+  "category": "structure_mixed",
+  "title": "Markdown table plus follow-up correction",
+  "attack": "table structure and correction",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You preserve technical rollout tables."
+    },
+    {
+      "role": "user",
+      "content": "Rollout table:\n| service | owner | p95 target | deadline |\n| api-gateway | Ravi | 180ms | Jul 12 |\n| ios-stream | Ana | 650ms | Jul 15 |\n| docs-migrate | Mei | n/a | Jul 10 |\nCorrection: api-gateway p95 target is 160ms, not 180ms. Launch requires error_budget < 0.5%."
+    },
+    {
+      "role": "assistant",
+      "content": "Ravi api-gateway target corrected to 160ms; Ana ios-stream 650ms; Mei docs Jul 10; error budget gate <0.5%."
+    }
+  ],
+  "qa_groups": [
+    [
+      "api-gateway"
+    ],
+    [
+      "Ravi"
+    ],
+    [
+      "180ms"
+    ],
+    [
+      "160ms"
+    ],
+    [
+      "ios-stream"
+    ],
+    [
+      "Ana"
+    ],
+    [
+      "650ms"
+    ],
+    [
+      "docs-migrate"
+    ],
+    [
+      "Mei"
+    ],
+    [
+      "Jul 10"
+    ],
+    [
+      "0.5%"
+    ]
+  ]
+}
